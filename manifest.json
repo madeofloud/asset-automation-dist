@@ -3,7 +3,7 @@
   "id": "marshall-ad-automation",
   "api": "1.0.0",
   "main": "main.js",
-  "ui": "https://madeofloud.github.io/asset-automation-dist/",
+  "ui": "index.html",
   "editorType": [
     "figma"
   ],
