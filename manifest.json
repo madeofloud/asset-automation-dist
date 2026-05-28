@@ -3,7 +3,11 @@
   "id": "marshall-ad-automation",
   "api": "1.0.0",
   "main": "main.js",
-  "ui": "https://asset-automation-omega.vercel.app/",
-  "editorType": ["figma"],
-  "permissions": ["currentuser"]
+  "ui": "https://madeofloud.github.io/asset-automation-dist/",
+  "editorType": [
+    "figma"
+  ],
+  "permissions": [
+    "currentuser"
+  ]
 }
