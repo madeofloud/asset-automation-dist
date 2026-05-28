@@ -246,14 +246,22 @@
         figma.ui.postMessage(msg);
       }
       function handleGetTemplates() {
-        const templatePage = figma.root.children.find((p) => p.name === "_Templates");
-        if (!templatePage || templatePage.type !== "PAGE") {
-          send({ type: "TEMPLATES_NOT_FOUND" });
+        const REQUIRED_PAGES = ["_Templates_Lifestyle", "_Templates_Product", "_Templates_Flixmedia", "_Templates_Videotitle"];
+        const pageNames = figma.root.children.map((p) => p.name);
+        const missing = REQUIRED_PAGES.filter((p) => !pageNames.includes(p));
+        if (missing.length > 0) {
+          send({
+            type: "GENERATION_ERROR",
+            message: `This plugin must be run inside the Marshall Asset Automation Figma file.
+
+Missing template pages: ${missing.join(", ")}
+
+Open the correct file at:
+https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
+          });
           return;
         }
-        const componentNames = [];
-        templatePage.findAll((n) => n.type === "COMPONENT" || n.type === "COMPONENT_SET").forEach((n) => componentNames.push(n.name));
-        send({ type: "TEMPLATES_FOUND", componentNames });
+        send({ type: "TEMPLATES_FOUND", componentNames: [] });
       }
       function handleRegisterImage(bytes) {
         return __async(this, null, function* () {
