@@ -1552,6 +1552,10 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
         var _a, _b;
         return (_b = (_a = figma.root.children.find((p) => p.name === "_Templates_PDP")) != null ? _a : figma.root.children.find((p) => p.name === "_Templates_Amazon")) != null ? _b : figma.root.children.find((p) => p.name === "_Templates_Amazon correct");
       }
+      function slideIdFromName(name) {
+        const m = name.match(/^(?:generic|[A-Z]{2})\/(\d{2})/);
+        return m ? m[1] : null;
+      }
       function handleCreatePdpComponents(campaignName) {
         return __async(this, null, function* () {
           const srcPage = findPdpTemplatePage();
@@ -1641,37 +1645,35 @@ FRAME ROWS (${rows.length}):`);
       }
       function handleGeneratePdp(payload) {
         return __async(this, null, function* () {
-          var _a, _b;
           const { campaignName, copyMap } = payload;
-          const srcPage = (_b = (_a = figma.root.children.find((p) => p.name === "_Templates_PDP")) != null ? _a : figma.root.children.find((p) => p.name === "_Templates_Amazon")) != null ? _b : figma.root.children.find((p) => p.name === "_Templates_Amazon correct");
+          const srcPage = findPdpTemplatePage();
           if (!srcPage) {
-            send({ type: "GENERATION_ERROR", message: 'Template page "_Templates_PDP" (or "_Templates_Amazon") not found in the Figma file.' });
+            send({ type: "GENERATION_ERROR", message: 'Template page "_Templates_PDP" (or "_Templates_Amazon") not found.' });
             return;
           }
           yield srcPage.loadAsync();
+          const outName = "\u{1F7E2} " + campaignName;
+          const outPage = figma.root.children.find((p) => p.name === outName);
+          if (!outPage) {
+            send({ type: "GENERATION_ERROR", message: 'Run "Create components" first \u2014 campaign page not found.' });
+            return;
+          }
+          yield outPage.loadAsync();
+          yield figma.setCurrentPageAsync(outPage);
+          const masterMap = {};
+          for (const node of outPage.children) {
+            if (node.type !== "COMPONENT") continue;
+            const sid = slideIdFromName(node.name);
+            if (sid) masterMap[sid] = node;
+          }
+          if (Object.keys(masterMap).length === 0) {
+            send({ type: "GENERATION_ERROR", message: 'No master components found on the campaign page. Re-run "Create components".' });
+            return;
+          }
           const kspMap = {};
           for (const node of srcPage.children) {
             const m = node.name.match(/^(?:generic|[A-Z]{2})\/(\d{2})\.(?:main|shading|clean|bestbuy)\.ksp(\d+)/i);
             if (m) kspMap[m[1]] = parseInt(m[2]);
-          }
-          const outName = "\u{1F7E2} " + campaignName;
-          let outPage = figma.root.children.find((p) => p.name === outName);
-          if (!outPage) {
-            outPage = figma.createPage();
-            outPage.name = outName;
-          } else {
-            yield outPage.loadAsync();
-            for (const c of [...outPage.children]) c.remove();
-          }
-          yield figma.setCurrentPageAsync(outPage);
-          let progress = 0;
-          const srcChildren = [...srcPage.children];
-          send({ type: "GENERATION_PROGRESS", current: 0, total: srcChildren.length + 50, label: "Klonar sida..." });
-          for (const child of srcChildren) {
-            const clone = child.clone();
-            outPage.appendChild(clone);
-            progress++;
-            send({ type: "GENERATION_PROGRESS", current: progress, total: srcChildren.length + 50, label: `Klonar "${child.name}"` });
           }
           const LANG_MAP = {
             EN: "English",
@@ -1685,65 +1687,128 @@ FRAME ROWS (${rows.length}):`);
             NL: "Dutch",
             SE: "Swedish"
           };
-          function injectKSP(frame, kspNum, langCode) {
+          const norm = (s) => s.replace(/\s+/g, " ").trim().toLowerCase();
+          const manualKeyByEnglish = {};
+          for (const [field, langs] of Object.entries(copyMap || {})) {
+            const en = langs["English"];
+            if (en) manualKeyByEnglish[norm(en)] = field;
+            manualKeyByEnglish[norm(field)] = field;
+          }
+          function translateManual(englishText, lang) {
+            var _a, _b;
+            const n = norm(englishText);
+            let key = manualKeyByEnglish[n];
+            if (!key) {
+              const n40 = n.slice(0, 40);
+              key = manualKeyByEnglish[n40];
+            }
+            if (!key) {
+              key = Object.keys(manualKeyByEnglish).find((k) => k.startsWith(n.slice(0, 20)) || n.startsWith(k.slice(0, 20))) ? manualKeyByEnglish[Object.keys(manualKeyByEnglish).find((k) => k.startsWith(n.slice(0, 20)) || n.startsWith(k.slice(0, 20)))] : void 0;
+            }
+            if (!key) return null;
+            return (_b = (_a = copyMap[key]) == null ? void 0 : _a[lang]) != null ? _b : null;
+          }
+          function setText(node, value) {
             return __async(this, null, function* () {
-              var _a2, _b2, _c, _d, _e, _f, _g, _h, _i;
-              if (!copyMap || langCode === "EN") return;
-              const lang = (_a2 = LANG_MAP[langCode]) != null ? _a2 : "English";
-              const fb = "English";
-              const hl = (_d = (_b2 = copyMap[`${kspNum} Key Selling Point Title`]) == null ? void 0 : _b2[lang]) != null ? _d : (_c = copyMap[`${kspNum} Key Selling Point Title`]) == null ? void 0 : _c[fb];
-              const bod = (_i = (_g = (_e = copyMap[`${kspNum} Key Selling Point Medium`]) == null ? void 0 : _e[lang]) != null ? _g : (_f = copyMap[`${kspNum} Key Selling Point Short`]) == null ? void 0 : _f[lang]) != null ? _i : (_h = copyMap[`${kspNum} Key Selling Point Medium`]) == null ? void 0 : _h[fb];
-              const hn = frame.findOne((n) => n.type === "TEXT" && (n.name === "Headline" || n.name === "Hedline"));
-              const bn = frame.findOne((n) => n.type === "TEXT" && n.name === "Body");
-              if (hn && hl) {
-                try {
-                  yield figma.loadFontAsync(hn.fontName);
-                } catch (e) {
-                }
-                ;
-                try {
-                  hn.characters = hl;
-                } catch (e) {
-                }
+              try {
+                yield figma.loadFontAsync(node.fontName);
+              } catch (e) {
               }
-              if (bn && bod) {
-                try {
-                  yield figma.loadFontAsync(bn.fontName);
-                } catch (e) {
-                }
-                ;
-                try {
-                  bn.characters = bod;
-                } catch (e) {
+              try {
+                node.characters = value;
+              } catch (e) {
+              }
+            });
+          }
+          function injectText(inst, slideId, langCode) {
+            return __async(this, null, function* () {
+              var _a, _b, _c, _d, _e;
+              if (langCode === "EN") return;
+              const lang = (_a = LANG_MAP[langCode]) != null ? _a : "English";
+              const kspNum = kspMap[slideId];
+              if (kspNum) {
+                const hl = (_b = copyMap[`${kspNum} Key Selling Point Title`]) == null ? void 0 : _b[lang];
+                const bod = (_e = (_c = copyMap[`${kspNum} Key Selling Point Medium`]) == null ? void 0 : _c[lang]) != null ? _e : (_d = copyMap[`${kspNum} Key Selling Point Short`]) == null ? void 0 : _d[lang];
+                const hn = inst.findOne((n) => n.type === "TEXT" && (n.name === "Headline" || n.name === "Hedline"));
+                const bn = inst.findOne((n) => n.type === "TEXT" && n.name === "Body");
+                if (hn && hl) yield setText(hn, hl);
+                if (bn && bod) yield setText(bn, bod);
+              }
+              const texts = inst.findAll((n) => n.type === "TEXT" && n.visible);
+              for (const t of texts) {
+                if (t.name === "Headline" || t.name === "Hedline" || t.name === "Body") continue;
+                const english = t.characters;
+                if (!english.trim()) continue;
+                const translated = translateManual(english, lang);
+                if (translated) yield setText(t, translated);
+              }
+            });
+          }
+          function mirrorVisibility(blueprint, inst) {
+            if (!("findAll" in blueprint)) return;
+            const bp = blueprint;
+            const bpLayers = bp.findAll(() => true);
+            const instLayers = inst.findAll(() => true);
+            const keyOf = (n, i) => `${n.type}:${n.name}:${i}`;
+            const instByKey = {};
+            instLayers.forEach((n, i) => {
+              instByKey[keyOf(n, i)] = n;
+            });
+            bpLayers.forEach((bn, i) => {
+              var _a;
+              if (bn.name === "shadow" || bn.name === "Feature" || bn.name === "Text block" || bn.name === "Headline" || bn.name === "Hedline" || bn.name === "Body") {
+                const match = (_a = instByKey[keyOf(bn, i)]) != null ? _a : instLayers.find((x) => x.name === bn.name && x.type === bn.type);
+                if (match && "visible" in match) {
+                  try {
+                    match.visible = bn.visible;
+                  } catch (e) {
+                  }
                 }
               }
             });
           }
-          const section1 = outPage.children.find((n) => n.name === "Section 1" && n.type === "SECTION");
-          let injected = 0;
-          if (section1) {
-            const frames = section1.children.filter(
-              (n) => n.type === "FRAME" || n.type === "INSTANCE" || n.type === "COMPONENT"
-            );
-            for (const frame of frames) {
-              const m = frame.name.match(/^([A-Z]{2})\/(\d{2})[-./]/);
-              if (!m) continue;
-              const langCode = m[1];
-              const slideNum = m[2];
-              if (langCode === "EN") continue;
-              const kspNum = kspMap[slideNum];
-              if (!kspNum) continue;
-              try {
-                yield injectKSP(frame, kspNum, langCode);
-              } catch (e) {
-              }
-              injected++;
-              progress++;
-              send({ type: "GENERATION_PROGRESS", current: progress, total: srcChildren.length + 50, label: `${langCode}/${slideNum} KSP ${kspNum}` });
+          const blueprintSection = srcPage.children.find((n) => n.name === "Section 1" && n.type === "SECTION");
+          if (!blueprintSection) {
+            send({ type: "GENERATION_ERROR", message: '"Section 1" not found in template.' });
+            return;
+          }
+          const prev = outPage.children.find((n) => n.name === "Section 1" && n.type === "SECTION");
+          if (prev) prev.remove();
+          const section = blueprintSection.clone();
+          outPage.appendChild(section);
+          const frameChildren = section.children.filter(
+            (n) => n.type === "FRAME" || n.type === "INSTANCE" || n.type === "COMPONENT"
+          );
+          const total = frameChildren.length;
+          let progress = 0;
+          let built = 0;
+          for (const bp of frameChildren) {
+            progress++;
+            const mLang = bp.name.match(/^([A-Z]{2})\/(\d{2})/);
+            const mNoLang = bp.name.match(/^(\d{2})/);
+            const langCode = mLang ? mLang[1] : "EN";
+            const slideId = mLang ? mLang[2] : mNoLang ? mNoLang[1] : null;
+            if (!slideId) continue;
+            const master = masterMap[slideId];
+            if (!master) continue;
+            const inst = master.createInstance();
+            inst.x = bp.x;
+            inst.y = bp.y;
+            inst.name = bp.name;
+            mirrorVisibility(bp, inst);
+            try {
+              yield injectText(inst, slideId, langCode);
+            } catch (e) {
+            }
+            section.appendChild(inst);
+            bp.remove();
+            built++;
+            if (progress % 5 === 0 || progress === total) {
+              send({ type: "GENERATION_PROGRESS", current: progress, total, label: `${bp.name.slice(0, 22)}` });
             }
           }
           figma.viewport.scrollAndZoomIntoView(outPage.children);
-          send({ type: "GENERATION_COMPLETE", frameCount: srcChildren.length + injected, pageName: outName });
+          send({ type: "GENERATION_COMPLETE", frameCount: built, pageName: outName });
         });
       }
     }
