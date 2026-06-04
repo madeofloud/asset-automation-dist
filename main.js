@@ -231,6 +231,8 @@
               return yield handleGenerateVideoTitles(msg.payload);
             case "GENERATE_PDP":
               return yield handleGeneratePdp(msg.payload);
+            case "INSPECT_PDP":
+              return yield handleInspectPdp();
             case "EXPORT_ALL":
               return yield handleExportAll(msg.campaignName);
             case "RESIZE":
@@ -1542,6 +1544,53 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
           }
           figma.viewport.scrollAndZoomIntoView(outputPage.children);
           send({ type: "GENERATION_COMPLETE", frameCount: total, pageName: campaignName });
+        });
+      }
+      function handleInspectPdp() {
+        return __async(this, null, function* () {
+          var _a, _b;
+          const srcPage = (_b = (_a = figma.root.children.find((p) => p.name === "_Templates_PDP")) != null ? _a : figma.root.children.find((p) => p.name === "_Templates_Amazon")) != null ? _b : figma.root.children.find((p) => p.name === "_Templates_Amazon correct");
+          if (!srcPage) {
+            send({ type: "PDP_INSPECTION", text: "Template page not found." });
+            return;
+          }
+          yield srcPage.loadAsync();
+          const lines = [];
+          const sources = srcPage.children.filter((n) => /^(generic|EN)\//.test(n.name)).sort((a, b) => a.x - b.x);
+          lines.push(`SOURCE FRAMES (${sources.length}):`);
+          for (const s of sources) lines.push(`  "${s.name}" @x=${Math.round(s.x)}`);
+          const sec = srcPage.children.find((n) => n.name === "Section 1" && n.type === "SECTION");
+          if (!sec) {
+            lines.push('\nNo "Section 1" found.');
+            send({ type: "PDP_INSPECTION", text: lines.join("\n") });
+            return;
+          }
+          lines.push(`
+SECTION 1: ${sec.children.length} children, origin x=${Math.round(sec.x)} y=${Math.round(sec.y)}`);
+          const labels = sec.children.filter((c) => c.type === "TEXT");
+          const frames = sec.children.filter((c) => c.type === "FRAME" || c.type === "INSTANCE" || c.type === "COMPONENT");
+          lines.push(`
+GROUP LABELS (${labels.length}):`);
+          for (const t of labels.sort((a, b) => a.y - b.y || a.x - b.x)) {
+            lines.push(`  y=${Math.round(t.y)} x=${Math.round(t.x)} :: "${t.characters.replace(/\n/g, " ").slice(0, 60)}"`);
+          }
+          const rows = [];
+          for (const f of frames.sort((a, b) => a.y - b.y || a.x - b.x)) {
+            const fy = f.y;
+            let row = rows.find((r) => Math.abs(r.y - fy) < 200);
+            if (!row) {
+              row = { y: fy, items: [] };
+              rows.push(row);
+            }
+            row.items.push(f);
+          }
+          lines.push(`
+FRAME ROWS (${rows.length}):`);
+          for (const row of rows) {
+            const names = row.items.map((i) => i.name.slice(0, 22)).join(" | ");
+            lines.push(`  y=${Math.round(row.y)} (${row.items.length}): ${names.slice(0, 200)}`);
+          }
+          send({ type: "PDP_INSPECTION", text: lines.join("\n") });
         });
       }
       function handleGeneratePdp(payload) {
