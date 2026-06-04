@@ -229,8 +229,8 @@
               return yield handleGenerateFlixmedia(msg.payload);
             case "GENERATE_VIDEOTITLES":
               return yield handleGenerateVideoTitles(msg.payload);
-            case "GENERATE_AMAZON":
-              return yield handleGenerateAmazon(msg.payload);
+            case "GENERATE_PDP":
+              return yield handleGeneratePdp(msg.payload);
             case "EXPORT_ALL":
               return yield handleExportAll(msg.campaignName);
             case "RESIZE":
@@ -1544,13 +1544,13 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
           send({ type: "GENERATION_COMPLETE", frameCount: total, pageName: campaignName });
         });
       }
-      function handleGenerateAmazon(payload) {
+      function handleGeneratePdp(payload) {
         return __async(this, null, function* () {
-          var _a;
+          var _a, _b;
           const { campaignName, copyMap } = payload;
-          const srcPage = (_a = figma.root.children.find((p) => p.name === "_Templates_Amazon")) != null ? _a : figma.root.children.find((p) => p.name === "_Templates_Amazon correct");
+          const srcPage = (_b = (_a = figma.root.children.find((p) => p.name === "_Templates_PDP")) != null ? _a : figma.root.children.find((p) => p.name === "_Templates_Amazon")) != null ? _b : figma.root.children.find((p) => p.name === "_Templates_Amazon correct");
           if (!srcPage) {
-            send({ type: "GENERATION_ERROR", message: 'Sidan "_Templates_Amazon" hittades inte i Figma-filen.' });
+            send({ type: "GENERATION_ERROR", message: 'Template page "_Templates_PDP" (or "_Templates_Amazon") not found in the Figma file.' });
             return;
           }
           yield srcPage.loadAsync();
@@ -1592,13 +1592,13 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
           };
           function injectKSP(frame, kspNum, langCode) {
             return __async(this, null, function* () {
-              var _a2, _b, _c, _d, _e, _f, _g, _h, _i;
+              var _a2, _b2, _c, _d, _e, _f, _g, _h, _i;
               if (!copyMap || langCode === "EN") return;
               const lang = (_a2 = LANG_MAP[langCode]) != null ? _a2 : "English";
               const fb = "English";
-              const hl = (_d = (_b = copyMap[`${kspNum} Key Selling Point Title`]) == null ? void 0 : _b[lang]) != null ? _d : (_c = copyMap[`${kspNum} Key Selling Point Title`]) == null ? void 0 : _c[fb];
+              const hl = (_d = (_b2 = copyMap[`${kspNum} Key Selling Point Title`]) == null ? void 0 : _b2[lang]) != null ? _d : (_c = copyMap[`${kspNum} Key Selling Point Title`]) == null ? void 0 : _c[fb];
               const bod = (_i = (_g = (_e = copyMap[`${kspNum} Key Selling Point Medium`]) == null ? void 0 : _e[lang]) != null ? _g : (_f = copyMap[`${kspNum} Key Selling Point Short`]) == null ? void 0 : _f[lang]) != null ? _i : (_h = copyMap[`${kspNum} Key Selling Point Medium`]) == null ? void 0 : _h[fb];
-              const hn = frame.findOne((n) => n.type === "TEXT" && n.name === "Hedline");
+              const hn = frame.findOne((n) => n.type === "TEXT" && (n.name === "Headline" || n.name === "Hedline"));
               const bn = frame.findOne((n) => n.type === "TEXT" && n.name === "Body");
               if (hn && hl) {
                 try {
