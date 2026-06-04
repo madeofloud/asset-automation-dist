@@ -1802,17 +1802,31 @@ FRAME ROWS (${rows.length}):`);
           }
           const secX = blueprintSection.x, secY = blueprintSection.y;
           const secW = blueprintSection.width, secH = blueprintSection.height;
-          const secFill = blueprintSection.fills;
+          const secFills = blueprintSection.fills;
+          const labelNodes = blueprintSection.children.filter((c) => c.type === "TEXT");
           const prev = outPage.children.find((n) => n.name === "Section 1" && n.type === "SECTION");
           if (prev) prev.remove();
-          const section = blueprintSection.clone();
+          const section = figma.createSection();
+          section.name = "Section 1";
           outPage.appendChild(section);
-          for (const c of [...section.children]) {
-            if (c.type !== "TEXT") {
-              try {
-                c.remove();
-              } catch (e) {
-              }
+          section.x = secX;
+          section.y = secY;
+          try {
+            section.resizeWithoutConstraints(secW, secH);
+          } catch (e) {
+          }
+          try {
+            if (secFills !== figma.mixed) section.fills = secFills;
+          } catch (e) {
+          }
+          for (const lbl of labelNodes) {
+            try {
+              const lx = lbl.x, ly = lbl.y;
+              const clone = lbl.clone();
+              section.appendChild(clone);
+              clone.x = lx;
+              clone.y = ly;
+            } catch (e) {
             }
           }
           const total = snaps.length;
@@ -1828,6 +1842,7 @@ FRAME ROWS (${rows.length}):`);
             const master = masterMap[slideId];
             if (!master) continue;
             const inst = master.createInstance();
+            section.appendChild(inst);
             inst.x = snap.x;
             inst.y = snap.y;
             inst.name = snap.name;
@@ -1836,7 +1851,6 @@ FRAME ROWS (${rows.length}):`);
               yield injectText(inst, slideId, langCode);
             } catch (e) {
             }
-            section.appendChild(inst);
             built++;
             if (progress % 5 === 0 || progress === total) {
               send({ type: "GENERATION_PROGRESS", current: progress, total, label: `${snap.name.slice(0, 22)}` });
