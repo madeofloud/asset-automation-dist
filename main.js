@@ -231,6 +231,8 @@
               return yield handleGenerateVideoTitles(msg.payload);
             case "GENERATE_PDP":
               return yield handleGeneratePdp(msg.payload);
+            case "CREATE_PDP_COMPONENTS":
+              return yield handleCreatePdpComponents(msg.campaignName);
             case "INSPECT_PDP":
               return yield handleInspectPdp();
             case "EXPORT_ALL":
@@ -1544,6 +1546,50 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
           }
           figma.viewport.scrollAndZoomIntoView(outputPage.children);
           send({ type: "GENERATION_COMPLETE", frameCount: total, pageName: campaignName });
+        });
+      }
+      function findPdpTemplatePage() {
+        var _a, _b;
+        return (_b = (_a = figma.root.children.find((p) => p.name === "_Templates_PDP")) != null ? _a : figma.root.children.find((p) => p.name === "_Templates_Amazon")) != null ? _b : figma.root.children.find((p) => p.name === "_Templates_Amazon correct");
+      }
+      function handleCreatePdpComponents(campaignName) {
+        return __async(this, null, function* () {
+          const srcPage = findPdpTemplatePage();
+          if (!srcPage) {
+            send({ type: "GENERATION_ERROR", message: 'Template page "_Templates_PDP" (or "_Templates_Amazon") not found.' });
+            return;
+          }
+          yield srcPage.loadAsync();
+          const outName = "\u{1F7E2} " + campaignName;
+          let outPage = figma.root.children.find((p) => p.name === outName);
+          if (!outPage) {
+            outPage = figma.createPage();
+            outPage.name = outName;
+          } else {
+            yield outPage.loadAsync();
+            for (const c of [...outPage.children]) c.remove();
+          }
+          yield figma.setCurrentPageAsync(outPage);
+          const srcChildren = [...srcPage.children];
+          const total = srcChildren.length;
+          let progress = 0;
+          const masters = [];
+          for (const child of srcChildren) {
+            progress++;
+            send({ type: "GENERATION_PROGRESS", current: progress, total, label: `Setting up "${child.name.slice(0, 24)}"` });
+            const isSourceFrame = /^(generic|[A-Z]{2})\//.test(child.name);
+            const isSection1 = child.name === "Section 1";
+            const isLegend = child.type === "TEXT";
+            if (isSection1 || isLegend) continue;
+            const clone = child.clone();
+            outPage.appendChild(clone);
+            if (isSourceFrame && clone.type === "FRAME") {
+              const comp = figma.createComponentFromNode(clone);
+              masters.push(comp);
+            }
+          }
+          figma.viewport.scrollAndZoomIntoView(outPage.children);
+          send({ type: "PDP_COMPONENTS_READY", pageName: outName, componentCount: masters.length });
         });
       }
       function handleInspectPdp() {
