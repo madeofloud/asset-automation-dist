@@ -1744,67 +1744,102 @@ FRAME ROWS (${rows.length}):`);
               }
             });
           }
-          function mirrorVisibility(blueprint, inst) {
-            if (!("findAll" in blueprint)) return;
-            const bp = blueprint;
-            const bpLayers = bp.findAll(() => true);
-            const instLayers = inst.findAll(() => true);
-            const keyOf = (n, i) => `${n.type}:${n.name}:${i}`;
-            const instByKey = {};
-            instLayers.forEach((n, i) => {
-              instByKey[keyOf(n, i)] = n;
-            });
-            bpLayers.forEach((bn, i) => {
-              var _a;
-              if (bn.name === "shadow" || bn.name === "Feature" || bn.name === "Text block" || bn.name === "Headline" || bn.name === "Hedline" || bn.name === "Body") {
-                const match = (_a = instByKey[keyOf(bn, i)]) != null ? _a : instLayers.find((x) => x.name === bn.name && x.type === bn.type);
-                if (match && "visible" in match) {
+          function applyTreatment(inst, t) {
+            if (t.shadow !== null) {
+              const sh = inst.findOne((n) => n.name === "shadow");
+              if (sh && "visible" in sh) {
+                try {
+                  sh.visible = t.shadow;
+                } catch (e) {
+                }
+              }
+            }
+            if (t.feature !== null) {
+              const feats = inst.findAll((n) => n.name === "Feature");
+              for (const f of feats) {
+                if ("visible" in f) {
                   try {
-                    match.visible = bn.visible;
+                    f.visible = t.feature;
                   } catch (e) {
                   }
                 }
               }
-            });
+            }
+            if (t.text !== null) {
+              const tb = inst.findAll((n) => n.name === "Text block");
+              for (const b of tb) {
+                if ("visible" in b) {
+                  try {
+                    b.visible = t.text;
+                  } catch (e) {
+                  }
+                }
+              }
+            }
           }
           const blueprintSection = srcPage.children.find((n) => n.name === "Section 1" && n.type === "SECTION");
           if (!blueprintSection) {
             send({ type: "GENERATION_ERROR", message: '"Section 1" not found in template.' });
             return;
           }
+          const snaps = [];
+          for (const bp of blueprintSection.children) {
+            if (bp.type !== "FRAME" && bp.type !== "INSTANCE" && bp.type !== "COMPONENT") continue;
+            const container = bp;
+            const sh = container.findOne((n) => n.name === "shadow");
+            const feat = container.findOne((n) => n.name === "Feature");
+            const tb = container.findOne((n) => n.name === "Text block");
+            snaps.push({
+              name: bp.name,
+              x: bp.x,
+              y: bp.y,
+              treatment: {
+                shadow: sh && "visible" in sh ? sh.visible : null,
+                feature: feat && "visible" in feat ? feat.visible : null,
+                text: tb && "visible" in tb ? tb.visible : null
+              }
+            });
+          }
+          const secX = blueprintSection.x, secY = blueprintSection.y;
+          const secW = blueprintSection.width, secH = blueprintSection.height;
+          const secFill = blueprintSection.fills;
           const prev = outPage.children.find((n) => n.name === "Section 1" && n.type === "SECTION");
           if (prev) prev.remove();
           const section = blueprintSection.clone();
           outPage.appendChild(section);
-          const frameChildren = section.children.filter(
-            (n) => n.type === "FRAME" || n.type === "INSTANCE" || n.type === "COMPONENT"
-          );
-          const total = frameChildren.length;
+          for (const c of [...section.children]) {
+            if (c.type !== "TEXT") {
+              try {
+                c.remove();
+              } catch (e) {
+              }
+            }
+          }
+          const total = snaps.length;
           let progress = 0;
           let built = 0;
-          for (const bp of frameChildren) {
+          for (const snap of snaps) {
             progress++;
-            const mLang = bp.name.match(/^([A-Z]{2})\/(\d{2})/);
-            const mNoLang = bp.name.match(/^(\d{2})/);
+            const mLang = snap.name.match(/^([A-Z]{2})\/(\d{2})/);
+            const mNoLang = snap.name.match(/^(\d{2})/);
             const langCode = mLang ? mLang[1] : "EN";
             const slideId = mLang ? mLang[2] : mNoLang ? mNoLang[1] : null;
             if (!slideId) continue;
             const master = masterMap[slideId];
             if (!master) continue;
             const inst = master.createInstance();
-            inst.x = bp.x;
-            inst.y = bp.y;
-            inst.name = bp.name;
-            mirrorVisibility(bp, inst);
+            inst.x = snap.x;
+            inst.y = snap.y;
+            inst.name = snap.name;
+            applyTreatment(inst, snap.treatment);
             try {
               yield injectText(inst, slideId, langCode);
             } catch (e) {
             }
             section.appendChild(inst);
-            bp.remove();
             built++;
             if (progress % 5 === 0 || progress === total) {
-              send({ type: "GENERATION_PROGRESS", current: progress, total, label: `${bp.name.slice(0, 22)}` });
+              send({ type: "GENERATION_PROGRESS", current: progress, total, label: `${snap.name.slice(0, 22)}` });
             }
           }
           figma.viewport.scrollAndZoomIntoView(outPage.children);
