@@ -1646,218 +1646,238 @@ FRAME ROWS (${rows.length}):`);
       function handleGeneratePdp(payload) {
         return __async(this, null, function* () {
           const { campaignName, copyMap } = payload;
-          const srcPage = findPdpTemplatePage();
-          if (!srcPage) {
-            send({ type: "GENERATION_ERROR", message: 'Template page "_Templates_PDP" (or "_Templates_Amazon") not found.' });
-            return;
-          }
-          yield srcPage.loadAsync();
-          const outName = "\u{1F7E2} " + campaignName;
-          const outPage = figma.root.children.find((p) => p.name === outName);
-          if (!outPage) {
-            send({ type: "GENERATION_ERROR", message: 'Run "Create components" first \u2014 campaign page not found.' });
-            return;
-          }
-          yield outPage.loadAsync();
-          yield figma.setCurrentPageAsync(outPage);
-          const masterMap = {};
-          for (const node of outPage.children) {
-            if (node.type !== "COMPONENT") continue;
-            const sid = slideIdFromName(node.name);
-            if (sid) masterMap[sid] = node;
-          }
-          if (Object.keys(masterMap).length === 0) {
-            send({ type: "GENERATION_ERROR", message: 'No master components found on the campaign page. Re-run "Create components".' });
-            return;
-          }
-          const kspMap = {};
-          for (const node of srcPage.children) {
-            const m = node.name.match(/^(?:generic|[A-Z]{2})\/(\d{2})\.(?:main|shading|clean|bestbuy)\.ksp(\d+)/i);
-            if (m) kspMap[m[1]] = parseInt(m[2]);
-          }
-          const LANG_MAP = {
-            EN: "English",
-            DE: "German",
-            ES: "Spanish",
-            FR: "French",
-            IT: "Italian",
-            CN: "Chinese",
-            JP: "Japanese",
-            KO: "Korean",
-            NL: "Dutch",
-            SE: "Swedish"
-          };
-          const norm = (s) => s.replace(/\s+/g, " ").trim().toLowerCase();
-          const manualKeyByEnglish = {};
-          for (const [field, langs] of Object.entries(copyMap || {})) {
-            const en = langs["English"];
-            if (en) manualKeyByEnglish[norm(en)] = field;
-            manualKeyByEnglish[norm(field)] = field;
-          }
-          function translateManual(englishText, lang) {
-            var _a, _b;
-            const n = norm(englishText);
-            let key = manualKeyByEnglish[n];
-            if (!key) {
-              const n40 = n.slice(0, 40);
-              key = manualKeyByEnglish[n40];
+          let step = "init";
+          try {
+            let translateManual2 = function(englishText, lang) {
+              var _a, _b;
+              const n = norm(englishText);
+              let key = manualKeyByEnglish[n];
+              if (!key) {
+                const n40 = n.slice(0, 40);
+                key = manualKeyByEnglish[n40];
+              }
+              if (!key) {
+                key = Object.keys(manualKeyByEnglish).find((k) => k.startsWith(n.slice(0, 20)) || n.startsWith(k.slice(0, 20))) ? manualKeyByEnglish[Object.keys(manualKeyByEnglish).find((k) => k.startsWith(n.slice(0, 20)) || n.startsWith(k.slice(0, 20)))] : void 0;
+              }
+              if (!key) return null;
+              return (_b = (_a = copyMap[key]) == null ? void 0 : _a[lang]) != null ? _b : null;
+            }, applyTreatment2 = function(inst, t) {
+              if (t.shadow !== null) {
+                const sh = inst.findOne((n) => n.name === "shadow");
+                if (sh && "visible" in sh) {
+                  try {
+                    sh.visible = t.shadow;
+                  } catch (e) {
+                  }
+                }
+              }
+              if (t.feature !== null) {
+                const feats = inst.findAll((n) => n.name === "Feature");
+                for (const f of feats) {
+                  if ("visible" in f) {
+                    try {
+                      f.visible = t.feature;
+                    } catch (e) {
+                    }
+                  }
+                }
+              }
+              if (t.text !== null) {
+                const tb = inst.findAll((n) => n.name === "Text block");
+                for (const b of tb) {
+                  if ("visible" in b) {
+                    try {
+                      b.visible = t.text;
+                    } catch (e) {
+                    }
+                  }
+                }
+              }
+            };
+            var translateManual = translateManual2, applyTreatment = applyTreatment2;
+            step = "find template page";
+            const srcPage = findPdpTemplatePage();
+            if (!srcPage) {
+              send({ type: "GENERATION_ERROR", message: 'Template page "_Templates_PDP" (or "_Templates_Amazon") not found.' });
+              return;
             }
-            if (!key) {
-              key = Object.keys(manualKeyByEnglish).find((k) => k.startsWith(n.slice(0, 20)) || n.startsWith(k.slice(0, 20))) ? manualKeyByEnglish[Object.keys(manualKeyByEnglish).find((k) => k.startsWith(n.slice(0, 20)) || n.startsWith(k.slice(0, 20)))] : void 0;
+            yield srcPage.loadAsync();
+            const outName = "\u{1F7E2} " + campaignName;
+            const outPage = figma.root.children.find((p) => p.name === outName);
+            if (!outPage) {
+              send({ type: "GENERATION_ERROR", message: 'Run "Create components" first \u2014 campaign page not found.' });
+              return;
             }
-            if (!key) return null;
-            return (_b = (_a = copyMap[key]) == null ? void 0 : _a[lang]) != null ? _b : null;
-          }
-          function setText(node, value) {
-            return __async(this, null, function* () {
-              try {
-                yield figma.loadFontAsync(node.fontName);
-              } catch (e) {
-              }
-              try {
-                node.characters = value;
-              } catch (e) {
-              }
-            });
-          }
-          function injectText(inst, slideId, langCode) {
-            return __async(this, null, function* () {
-              var _a, _b, _c, _d, _e;
-              if (langCode === "EN") return;
-              const lang = (_a = LANG_MAP[langCode]) != null ? _a : "English";
-              const kspNum = kspMap[slideId];
-              if (kspNum) {
-                const hl = (_b = copyMap[`${kspNum} Key Selling Point Title`]) == null ? void 0 : _b[lang];
-                const bod = (_e = (_c = copyMap[`${kspNum} Key Selling Point Medium`]) == null ? void 0 : _c[lang]) != null ? _e : (_d = copyMap[`${kspNum} Key Selling Point Short`]) == null ? void 0 : _d[lang];
-                const hn = inst.findOne((n) => n.type === "TEXT" && (n.name === "Headline" || n.name === "Hedline"));
-                const bn = inst.findOne((n) => n.type === "TEXT" && n.name === "Body");
-                if (hn && hl) yield setText(hn, hl);
-                if (bn && bod) yield setText(bn, bod);
-              }
-              const texts = inst.findAll((n) => n.type === "TEXT" && n.visible);
-              for (const t of texts) {
-                if (t.name === "Headline" || t.name === "Hedline" || t.name === "Body") continue;
-                const english = t.characters;
-                if (!english.trim()) continue;
-                const translated = translateManual(english, lang);
-                if (translated) yield setText(t, translated);
-              }
-            });
-          }
-          function applyTreatment(inst, t) {
-            if (t.shadow !== null) {
-              const sh = inst.findOne((n) => n.name === "shadow");
-              if (sh && "visible" in sh) {
+            yield outPage.loadAsync();
+            yield figma.setCurrentPageAsync(outPage);
+            step = "build master map";
+            const masterMap = {};
+            for (const node of outPage.children) {
+              if (node.type !== "COMPONENT") continue;
+              const sid = slideIdFromName(node.name);
+              if (sid) masterMap[sid] = node;
+            }
+            if (Object.keys(masterMap).length === 0) {
+              send({ type: "GENERATION_ERROR", message: 'No master components found on the campaign page. Re-run "Create components".' });
+              return;
+            }
+            const kspMap = {};
+            for (const node of srcPage.children) {
+              const m = node.name.match(/^(?:generic|[A-Z]{2})\/(\d{2})\.(?:main|shading|clean|bestbuy)\.ksp(\d+)/i);
+              if (m) kspMap[m[1]] = parseInt(m[2]);
+            }
+            const LANG_MAP = {
+              EN: "English",
+              DE: "German",
+              ES: "Spanish",
+              FR: "French",
+              IT: "Italian",
+              CN: "Chinese",
+              JP: "Japanese",
+              KO: "Korean",
+              NL: "Dutch",
+              SE: "Swedish"
+            };
+            const norm = (s) => s.replace(/\s+/g, " ").trim().toLowerCase();
+            const manualKeyByEnglish = {};
+            for (const [field, langs] of Object.entries(copyMap || {})) {
+              const en = langs["English"];
+              if (en) manualKeyByEnglish[norm(en)] = field;
+              manualKeyByEnglish[norm(field)] = field;
+            }
+            function setText(node, value) {
+              return __async(this, null, function* () {
                 try {
-                  sh.visible = t.shadow;
+                  yield figma.loadFontAsync(node.fontName);
                 } catch (e) {
                 }
-              }
-            }
-            if (t.feature !== null) {
-              const feats = inst.findAll((n) => n.name === "Feature");
-              for (const f of feats) {
-                if ("visible" in f) {
-                  try {
-                    f.visible = t.feature;
-                  } catch (e) {
-                  }
+                try {
+                  node.characters = value;
+                } catch (e) {
                 }
-              }
+              });
             }
-            if (t.text !== null) {
-              const tb = inst.findAll((n) => n.name === "Text block");
-              for (const b of tb) {
-                if ("visible" in b) {
-                  try {
-                    b.visible = t.text;
-                  } catch (e) {
-                  }
+            function injectText(inst, slideId, langCode) {
+              return __async(this, null, function* () {
+                var _a, _b, _c, _d, _e;
+                if (langCode === "EN") return;
+                const lang = (_a = LANG_MAP[langCode]) != null ? _a : "English";
+                const kspNum = kspMap[slideId];
+                if (kspNum) {
+                  const hl = (_b = copyMap[`${kspNum} Key Selling Point Title`]) == null ? void 0 : _b[lang];
+                  const bod = (_e = (_c = copyMap[`${kspNum} Key Selling Point Medium`]) == null ? void 0 : _c[lang]) != null ? _e : (_d = copyMap[`${kspNum} Key Selling Point Short`]) == null ? void 0 : _d[lang];
+                  const hn = inst.findOne((n) => n.type === "TEXT" && (n.name === "Headline" || n.name === "Hedline"));
+                  const bn = inst.findOne((n) => n.type === "TEXT" && n.name === "Body");
+                  if (hn && hl) yield setText(hn, hl);
+                  if (bn && bod) yield setText(bn, bod);
                 }
-              }
+                const texts = inst.findAll((n) => n.type === "TEXT" && n.visible);
+                for (const t of texts) {
+                  if (t.name === "Headline" || t.name === "Hedline" || t.name === "Body") continue;
+                  const english = t.characters;
+                  if (!english.trim()) continue;
+                  const translated = translateManual2(english, lang);
+                  if (translated) yield setText(t, translated);
+                }
+              });
             }
-          }
-          const blueprintSection = srcPage.children.find((n) => n.name === "Section 1" && n.type === "SECTION");
-          if (!blueprintSection) {
-            send({ type: "GENERATION_ERROR", message: '"Section 1" not found in template.' });
-            return;
-          }
-          const snaps = [];
-          for (const bp of blueprintSection.children) {
-            if (bp.type !== "FRAME" && bp.type !== "INSTANCE" && bp.type !== "COMPONENT") continue;
-            const container = bp;
-            const sh = container.findOne((n) => n.name === "shadow");
-            const feat = container.findOne((n) => n.name === "Feature");
-            const tb = container.findOne((n) => n.name === "Text block");
-            snaps.push({
-              name: bp.name,
-              x: bp.x,
-              y: bp.y,
-              treatment: {
-                shadow: sh && "visible" in sh ? sh.visible : null,
-                feature: feat && "visible" in feat ? feat.visible : null,
-                text: tb && "visible" in tb ? tb.visible : null
-              }
-            });
-          }
-          const secX = blueprintSection.x, secY = blueprintSection.y;
-          const secW = blueprintSection.width, secH = blueprintSection.height;
-          const secFills = blueprintSection.fills;
-          const labelNodes = blueprintSection.children.filter((c) => c.type === "TEXT");
-          const prev = outPage.children.find((n) => n.name === "Section 1" && n.type === "SECTION");
-          if (prev) prev.remove();
-          const section = figma.createSection();
-          section.name = "Section 1";
-          outPage.appendChild(section);
-          section.x = secX;
-          section.y = secY;
-          try {
-            section.resizeWithoutConstraints(secW, secH);
-          } catch (e) {
-          }
-          try {
-            if (secFills !== figma.mixed) section.fills = secFills;
-          } catch (e) {
-          }
-          for (const lbl of labelNodes) {
+            step = "find blueprint section";
+            const blueprintSection = srcPage.children.find((n) => n.name === "Section 1" && n.type === "SECTION");
+            if (!blueprintSection) {
+              send({ type: "GENERATION_ERROR", message: '"Section 1" not found in template.' });
+              return;
+            }
+            step = "snapshot blueprint frames";
+            const snaps = [];
+            for (const bp of blueprintSection.children) {
+              if (bp.type !== "FRAME" && bp.type !== "INSTANCE" && bp.type !== "COMPONENT") continue;
+              const container = bp;
+              const sh = container.findOne((n) => n.name === "shadow");
+              const feat = container.findOne((n) => n.name === "Feature");
+              const tb = container.findOne((n) => n.name === "Text block");
+              snaps.push({
+                name: bp.name,
+                x: bp.x,
+                y: bp.y,
+                treatment: {
+                  shadow: sh && "visible" in sh ? sh.visible : null,
+                  feature: feat && "visible" in feat ? feat.visible : null,
+                  text: tb && "visible" in tb ? tb.visible : null
+                }
+              });
+            }
+            step = "snapshot section geometry";
+            const secX = blueprintSection.x, secY = blueprintSection.y;
+            const secW = blueprintSection.width, secH = blueprintSection.height;
+            const secFills = blueprintSection.fills;
+            const labelNodes = blueprintSection.children.filter((c) => c.type === "TEXT");
+            step = "remove previous section";
+            const prev = outPage.children.find((n) => n.name === "Section 1" && n.type === "SECTION");
+            if (prev) prev.remove();
+            step = "create section";
+            const section = figma.createSection();
+            section.name = "Section 1";
+            outPage.appendChild(section);
+            section.x = secX;
+            section.y = secY;
             try {
-              const lx = lbl.x, ly = lbl.y;
-              const clone = lbl.clone();
-              section.appendChild(clone);
-              clone.x = lx;
-              clone.y = ly;
+              section.resizeWithoutConstraints(secW, secH);
+            } catch (e) {
+              step = "resize section: " + e.message;
+            }
+            try {
+              if (secFills !== figma.mixed) section.fills = secFills;
             } catch (e) {
             }
-          }
-          const total = snaps.length;
-          let progress = 0;
-          let built = 0;
-          for (const snap of snaps) {
-            progress++;
-            const mLang = snap.name.match(/^([A-Z]{2})\/(\d{2})/);
-            const mNoLang = snap.name.match(/^(\d{2})/);
-            const langCode = mLang ? mLang[1] : "EN";
-            const slideId = mLang ? mLang[2] : mNoLang ? mNoLang[1] : null;
-            if (!slideId) continue;
-            const master = masterMap[slideId];
-            if (!master) continue;
-            const inst = master.createInstance();
-            section.appendChild(inst);
-            inst.x = snap.x;
-            inst.y = snap.y;
-            inst.name = snap.name;
-            applyTreatment(inst, snap.treatment);
-            try {
-              yield injectText(inst, slideId, langCode);
-            } catch (e) {
+            step = "clone labels";
+            for (const lbl of labelNodes) {
+              try {
+                const lx = lbl.x, ly = lbl.y;
+                const clone = lbl.clone();
+                section.appendChild(clone);
+                clone.x = lx;
+                clone.y = ly;
+              } catch (e) {
+              }
             }
-            built++;
-            if (progress % 5 === 0 || progress === total) {
-              send({ type: "GENERATION_PROGRESS", current: progress, total, label: `${snap.name.slice(0, 22)}` });
+            const total = snaps.length;
+            let progress = 0;
+            let built = 0;
+            for (const snap of snaps) {
+              progress++;
+              const mLang = snap.name.match(/^([A-Z]{2})\/(\d{2})/);
+              const mNoLang = snap.name.match(/^(\d{2})/);
+              const langCode = mLang ? mLang[1] : "EN";
+              const slideId = mLang ? mLang[2] : mNoLang ? mNoLang[1] : null;
+              if (!slideId) continue;
+              const master = masterMap[slideId];
+              if (!master) continue;
+              step = `instance ${snap.name.slice(0, 20)} (create)`;
+              const inst = master.createInstance();
+              step = `instance ${snap.name.slice(0, 20)} (append)`;
+              section.appendChild(inst);
+              inst.x = snap.x;
+              inst.y = snap.y;
+              inst.name = snap.name;
+              step = `instance ${snap.name.slice(0, 20)} (treatment)`;
+              applyTreatment2(inst, snap.treatment);
+              step = `instance ${snap.name.slice(0, 20)} (text)`;
+              try {
+                yield injectText(inst, slideId, langCode);
+              } catch (e) {
+              }
+              built++;
+              if (progress % 5 === 0 || progress === total) {
+                send({ type: "GENERATION_PROGRESS", current: progress, total, label: `${snap.name.slice(0, 22)}` });
+              }
             }
+            step = "finalize";
+            figma.viewport.scrollAndZoomIntoView(outPage.children);
+            send({ type: "GENERATION_COMPLETE", frameCount: built, pageName: outName });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "GENERATION_ERROR", message: `Failed at step [${step}]: ${message}` });
           }
-          figma.viewport.scrollAndZoomIntoView(outPage.children);
-          send({ type: "GENERATION_COMPLETE", frameCount: built, pageName: outName });
         });
       }
     }
