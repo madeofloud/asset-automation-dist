@@ -1649,45 +1649,36 @@ FRAME ROWS (${rows.length}):`);
           let step = "init";
           try {
             let translateManual2 = function(englishText, lang) {
-              var _a, _b;
+              var _a, _b, _c;
               const n = norm(englishText);
-              let key = manualKeyByEnglish[n];
-              if (!key) {
-                const n40 = n.slice(0, 40);
-                key = manualKeyByEnglish[n40];
-              }
-              if (!key) {
-                key = Object.keys(manualKeyByEnglish).find((k) => k.startsWith(n.slice(0, 20)) || n.startsWith(k.slice(0, 20))) ? manualKeyByEnglish[Object.keys(manualKeyByEnglish).find((k) => k.startsWith(n.slice(0, 20)) || n.startsWith(k.slice(0, 20)))] : void 0;
-              }
+              let key = (_a = manualKeyByEnglish[n]) != null ? _a : manualKeyByEnglish[n.slice(0, 40)];
               if (!key) return null;
-              return (_b = (_a = copyMap[key]) == null ? void 0 : _a[lang]) != null ? _b : null;
+              return (_c = (_b = copyMap[key]) == null ? void 0 : _b[lang]) != null ? _c : null;
             }, applyTreatment2 = function(inst, t) {
-              if (t.shadow !== null) {
-                const sh = inst.findOne((n) => n.name === "shadow");
-                if (sh && "visible" in sh) {
+              if (t.regular !== null) {
+                const reg = inst.findOne((n) => n.name === "Regular version");
+                if (reg && "visible" in reg) {
                   try {
-                    sh.visible = t.shadow;
+                    reg.visible = t.regular;
                   } catch (e) {
                   }
                 }
               }
-              if (t.feature !== null) {
-                const feats = inst.findAll((n) => n.name === "Feature");
-                for (const f of feats) {
-                  if ("visible" in f) {
-                    try {
-                      f.visible = t.feature;
-                    } catch (e) {
-                    }
+              if (t.withoutCopy !== null) {
+                const woc = inst.findOne((n) => n.name === "Version without copy");
+                if (woc && "visible" in woc) {
+                  try {
+                    woc.visible = t.withoutCopy;
+                  } catch (e) {
                   }
                 }
               }
-              if (t.text !== null) {
-                const tb = inst.findAll((n) => n.name === "Text block");
-                for (const b of tb) {
-                  if ("visible" in b) {
+              if (t.shadow !== null) {
+                const shadows = inst.findAll((n) => n.name.toLowerCase().includes("shadow"));
+                for (const s of shadows) {
+                  if ("visible" in s) {
                     try {
-                      b.visible = t.text;
+                      s.visible = t.shadow;
                     } catch (e) {
                     }
                   }
@@ -1759,19 +1750,20 @@ FRAME ROWS (${rows.length}):`);
             }
             function injectText(inst, slideId, langCode) {
               return __async(this, null, function* () {
-                var _a, _b, _c, _d, _e;
+                var _a, _b, _c, _d, _e, _f;
                 if (langCode === "EN") return;
                 const lang = (_a = LANG_MAP[langCode]) != null ? _a : "English";
+                const scope = (_b = inst.findOne((n) => n.name === "Regular version")) != null ? _b : inst;
                 const kspNum = kspMap[slideId];
                 if (kspNum) {
-                  const hl = (_b = copyMap[`${kspNum} Key Selling Point Title`]) == null ? void 0 : _b[lang];
-                  const bod = (_e = (_c = copyMap[`${kspNum} Key Selling Point Medium`]) == null ? void 0 : _c[lang]) != null ? _e : (_d = copyMap[`${kspNum} Key Selling Point Short`]) == null ? void 0 : _d[lang];
-                  const hn = inst.findOne((n) => n.type === "TEXT" && (n.name === "Headline" || n.name === "Hedline"));
-                  const bn = inst.findOne((n) => n.type === "TEXT" && n.name === "Body");
+                  const hl = (_c = copyMap[`${kspNum} Key Selling Point Title`]) == null ? void 0 : _c[lang];
+                  const bod = (_f = (_d = copyMap[`${kspNum} Key Selling Point Medium`]) == null ? void 0 : _d[lang]) != null ? _f : (_e = copyMap[`${kspNum} Key Selling Point Short`]) == null ? void 0 : _e[lang];
+                  const hn = scope.findOne((n) => n.type === "TEXT" && (n.name === "Headline" || n.name === "Hedline"));
+                  const bn = scope.findOne((n) => n.type === "TEXT" && n.name === "Body");
                   if (hn && hl) yield setText(hn, hl);
                   if (bn && bod) yield setText(bn, bod);
                 }
-                const texts = inst.findAll((n) => n.type === "TEXT" && n.visible);
+                const texts = scope.findAll((n) => n.type === "TEXT");
                 for (const t of texts) {
                   if (t.name === "Headline" || t.name === "Hedline" || t.name === "Body") continue;
                   const english = t.characters;
@@ -1792,18 +1784,21 @@ FRAME ROWS (${rows.length}):`);
             for (const bp of blueprintSection.children) {
               if (bp.type !== "FRAME" && bp.type !== "INSTANCE" && bp.type !== "COMPONENT") continue;
               const container = bp;
-              const sh = container.findOne((n) => n.name === "shadow");
-              const feat = container.findOne((n) => n.name === "Feature");
-              const tb = container.findOne((n) => n.name === "Text block");
+              const reg = container.findOne((n) => n.name === "Regular version");
+              const woc = container.findOne((n) => n.name === "Version without copy");
+              const regVis = reg && "visible" in reg ? reg.visible : null;
+              const wocVis = woc && "visible" in woc ? woc.visible : null;
+              let shadowVis = null;
+              const visibleVersion = woc && wocVis ? woc : reg && regVis ? reg : null;
+              if (visibleVersion && "findOne" in visibleVersion) {
+                const sh = visibleVersion.findOne((n) => n.name.toLowerCase().includes("shadow"));
+                if (sh && "visible" in sh) shadowVis = sh.visible;
+              }
               snaps.push({
                 name: bp.name,
                 x: bp.x,
                 y: bp.y,
-                treatment: {
-                  shadow: sh && "visible" in sh ? sh.visible : null,
-                  feature: feat && "visible" in feat ? feat.visible : null,
-                  text: tb && "visible" in tb ? tb.visible : null
-                }
+                treatment: { regular: regVis, withoutCopy: wocVis, shadow: shadowVis }
               });
             }
             step = "snapshot section geometry";
