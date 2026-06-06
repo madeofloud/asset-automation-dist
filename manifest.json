@@ -4,10 +4,13 @@
   "api": "1.0.0",
   "main": "main.js",
   "ui": "index.html",
-  "editorType": [
-    "figma"
-  ],
-  "permissions": [
-    "currentuser"
-  ]
+  "editorType": ["figma"],
+  "permissions": ["currentuser"],
+  "networkAccess": {
+    "allowedDomains": [
+      "https://raw.githubusercontent.com",
+      "https://api.anthropic.com"
+    ],
+    "reasoning": "Check for plugin updates (version.json) and AI copy/image adaptation."
+  }
 }
