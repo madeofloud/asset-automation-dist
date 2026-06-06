@@ -239,6 +239,8 @@
               return yield handleExportAll(msg.campaignName);
             case "RESIZE":
               return figma.ui.resize(msg.width, msg.height);
+            case "OPEN_URL":
+              return figma.openExternal(msg.url);
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
