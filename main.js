@@ -1549,8 +1549,8 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
         });
       }
       function findPdpTemplatePage() {
-        var _a, _b;
-        return (_b = (_a = figma.root.children.find((p) => p.name === "_Templates_PDP")) != null ? _a : figma.root.children.find((p) => p.name === "_Templates_Amazon")) != null ? _b : figma.root.children.find((p) => p.name === "_Templates_Amazon correct");
+        var _a, _b, _c;
+        return (_c = (_b = (_a = figma.root.children.find((p) => p.name === "_Templates_BrandstorePDP")) != null ? _a : figma.root.children.find((p) => p.name === "_Templates_PDP")) != null ? _b : figma.root.children.find((p) => p.name === "_Templates_Amazon")) != null ? _c : figma.root.children.find((p) => p.name === "_Templates_Amazon correct");
       }
       function slideIdFromName(name) {
         const m = name.match(/^(?:generic|[A-Z]{2})\/(\d{2})/);
@@ -1598,8 +1598,7 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
       }
       function handleInspectPdp() {
         return __async(this, null, function* () {
-          var _a, _b;
-          const srcPage = (_b = (_a = figma.root.children.find((p) => p.name === "_Templates_PDP")) != null ? _a : figma.root.children.find((p) => p.name === "_Templates_Amazon")) != null ? _b : figma.root.children.find((p) => p.name === "_Templates_Amazon correct");
+          const srcPage = findPdpTemplatePage();
           if (!srcPage) {
             send({ type: "PDP_INSPECTION", text: "Template page not found." });
             return;
