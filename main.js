@@ -1542,17 +1542,48 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
           outputPage.appendChild(clone);
           clone.x = x;
           clone.y = y;
+          const MARGIN_RATIO = 0.1;
+          const maxTextW = Math.round(w * (1 - MARGIN_RATIO * 2));
+          const wrapAndCenter = (t) => {
+            try {
+              const parent = t.parent;
+              const parentW = parent && "width" in parent ? parent.width : w;
+              const wrapW = Math.min(maxTextW, Math.round(parentW * (1 - MARGIN_RATIO * 2)));
+              const cy = t.y + t.height / 2;
+              t.textAlignHorizontal = "CENTER";
+              t.textAutoResize = "HEIGHT";
+              t.resize(wrapW, t.height);
+              t.x = Math.round((parentW - wrapW) / 2);
+              t.y = Math.round(cy - t.height / 2);
+            } catch (e) {
+            }
+          };
           const texts = collectTextNodes(clone);
           if (typeKey === "lockup") {
             const header = (_a = texts.find((t) => /productname/i.test(t.name))) != null ? _a : texts[0];
             const sub = (_b = texts.find((t) => t !== header && /sub|header/i.test(t.name))) != null ? _b : texts.find((t) => t !== header);
-            if (header) yield setVtText(header, mainText);
+            if (header) {
+              yield setVtText(header, mainText);
+              wrapAndCenter(header);
+            }
             if (sub) {
-              if (subText) yield setVtText(sub, subText);
-              else sub.remove();
+              if (subText) {
+                yield setVtText(sub, subText);
+                wrapAndCenter(sub);
+              } else sub.remove();
+            }
+            if (header && sub && subText) {
+              const gap = Math.round(h * 0.02);
+              const totalH = header.height + gap + sub.height;
+              const top = Math.round((h - totalH) / 2);
+              header.y = top;
+              sub.y = top + header.height + gap;
             }
           } else {
-            if (texts[0]) yield setVtText(texts[0], mainText);
+            if (texts[0]) {
+              yield setVtText(texts[0], mainText);
+              wrapAndCenter(texts[0]);
+            }
           }
           return clone;
         });
