@@ -1470,28 +1470,38 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
       function setVtText(node, text) {
         return __async(this, null, function* () {
           const len = node.characters.length;
-          const baseFont = len > 0 ? node.getRangeFontName(0, 1) : node.fontName;
-          if (baseFont !== figma.mixed) {
+          const fonts = [];
+          const seen = /* @__PURE__ */ new Set();
+          const add = (fn) => {
+            if (fn === figma.mixed) return;
+            const key = JSON.stringify(fn);
+            if (!seen.has(key)) {
+              seen.add(key);
+              fonts.push(fn);
+            }
+          };
+          add(node.fontName);
+          for (let i = 0; i < len; i++) add(node.getRangeFontName(i, i + 1));
+          for (const fn of fonts) {
             try {
-              yield figma.loadFontAsync(baseFont);
+              yield figma.loadFontAsync(fn);
             } catch (e) {
             }
-            node.characters = text;
+          }
+          let baseFont = null;
+          const declared = node.fontName;
+          if (declared !== figma.mixed) baseFont = declared;
+          else if (len > 0) {
+            const f0 = node.getRangeFontName(0, 1);
+            if (f0 !== figma.mixed) baseFont = f0;
+          }
+          if (!baseFont && fonts.length) baseFont = fonts[0];
+          node.characters = text;
+          if (baseFont) {
             try {
               node.setRangeFontName(0, text.length, baseFont);
             } catch (e) {
             }
-          } else {
-            for (let i = 0; i < len; i++) {
-              const fn = node.getRangeFontName(i, i + 1);
-              if (fn !== figma.mixed) {
-                try {
-                  yield figma.loadFontAsync(fn);
-                } catch (e) {
-                }
-              }
-            }
-            node.characters = text;
           }
         });
       }
