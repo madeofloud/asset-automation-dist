@@ -1264,9 +1264,27 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
       };
       var ASIAN_LANGS = /* @__PURE__ */ new Set(["Japanese", "Chinese", "Korean"]);
       var ASIAN_FONT_MAP = {
-        "Chinese": [{ family: "PingFang SC", style: "Regular" }, { family: "Noto Sans SC", style: "Regular" }, { family: "Arial", style: "Regular" }],
-        "Japanese": [{ family: "Hiragino Kaku Gothic Pro", style: "W6" }, { family: "Noto Sans JP", style: "Bold" }, { family: "Arial", style: "Regular" }],
-        "Korean": [{ family: "Apple SD Gothic Neo", style: "Bold" }, { family: "Noto Sans KR", style: "Bold" }, { family: "Arial", style: "Regular" }]
+        "Chinese": [
+          { family: "Source Han Sans SC", style: "Heavy" },
+          { family: "Source Han Sans", style: "Heavy" },
+          { family: "Noto Sans SC", style: "Black" },
+          { family: "PingFang SC", style: "Semibold" },
+          { family: "Arial", style: "Regular" }
+        ],
+        "Japanese": [
+          { family: "Source Han Sans", style: "Heavy" },
+          { family: "Source Han Sans JP", style: "Heavy" },
+          { family: "Noto Sans JP", style: "Black" },
+          { family: "Hiragino Kaku Gothic Pro", style: "W6" },
+          { family: "Arial", style: "Regular" }
+        ],
+        "Korean": [
+          { family: "Source Han Sans K", style: "Heavy" },
+          { family: "Source Han Sans KR", style: "Heavy" },
+          { family: "Noto Sans KR", style: "Black" },
+          { family: "Apple SD Gothic Neo", style: "Bold" },
+          { family: "Arial", style: "Regular" }
+        ]
       };
       function loadMarshallFont() {
         return __async(this, null, function* () {
