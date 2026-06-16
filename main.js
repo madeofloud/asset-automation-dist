@@ -1265,23 +1265,20 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
       var ASIAN_LANGS = /* @__PURE__ */ new Set(["Japanese", "Chinese", "Korean"]);
       var ASIAN_FONT_MAP = {
         "Chinese": [
-          { family: "Source Han Sans SC", style: "Heavy" },
-          { family: "Source Han Sans", style: "Heavy" },
-          { family: "Noto Sans SC", style: "Black" },
-          { family: "PingFang SC", style: "Semibold" },
+          { family: "Source Han Sans SC", style: "Regular" },
+          { family: "Noto Sans SC", style: "Regular" },
+          { family: "PingFang SC", style: "Regular" },
           { family: "Arial", style: "Regular" }
         ],
         "Japanese": [
-          { family: "Source Han Sans", style: "Heavy" },
-          { family: "Source Han Sans JP", style: "Heavy" },
-          { family: "Noto Sans JP", style: "Black" },
+          { family: "Source Han Sans", style: "Bold" },
+          { family: "Noto Sans JP", style: "Bold" },
           { family: "Hiragino Kaku Gothic Pro", style: "W6" },
           { family: "Arial", style: "Regular" }
         ],
         "Korean": [
-          { family: "Source Han Sans K", style: "Heavy" },
-          { family: "Source Han Sans KR", style: "Heavy" },
-          { family: "Noto Sans KR", style: "Black" },
+          { family: "Source Han Sans K", style: "Bold" },
+          { family: "Noto Sans KR", style: "Bold" },
           { family: "Apple SD Gothic Neo", style: "Bold" },
           { family: "Arial", style: "Regular" }
         ]
@@ -1440,9 +1437,92 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
           return frame;
         });
       }
+      function vtTemplateFrameName(typeKey, langCode, w, h) {
+        const size = `${w}x${h}`;
+        switch (typeKey) {
+          case "introducing":
+            return `${langCode}/INTRODUCING ${size}`;
+          case "logo":
+            return `LOGO/PRODUCTNAME LOGO ${size}`;
+          case "lockup":
+            return `${langCode}/PRODUCTNAME LOCKUP ${size}`;
+          case "usp1":
+            return `${langCode}/USP01 ${size}`;
+          case "usp2":
+            return `${langCode}/USP02 ${size}`;
+          case "usp3":
+            return `${langCode}/USP03 ${size}`;
+          case "usp4":
+            return `${langCode}/USP04 ${size}`;
+          case "usp5":
+            return `${langCode}/USP05 ${size}`;
+          case "usp6":
+            return `${langCode}/USP06 ${size}`;
+          default:
+            return "";
+        }
+      }
+      function collectTextNodes(node, out = []) {
+        if (node.type === "TEXT") out.push(node);
+        if ("children" in node) for (const c of node.children) collectTextNodes(c, out);
+        return out;
+      }
+      function setVtText(node, text) {
+        return __async(this, null, function* () {
+          const len = node.characters.length;
+          const baseFont = len > 0 ? node.getRangeFontName(0, 1) : node.fontName;
+          if (baseFont !== figma.mixed) {
+            try {
+              yield figma.loadFontAsync(baseFont);
+            } catch (e) {
+            }
+            node.characters = text;
+            try {
+              node.setRangeFontName(0, text.length, baseFont);
+            } catch (e) {
+            }
+          } else {
+            for (let i = 0; i < len; i++) {
+              const fn = node.getRangeFontName(i, i + 1);
+              if (fn !== figma.mixed) {
+                try {
+                  yield figma.loadFontAsync(fn);
+                } catch (e) {
+                }
+              }
+            }
+            node.characters = text;
+          }
+        });
+      }
+      function cloneVtFrameFromTemplate(templatePage, outputPage, typeKey, langCode, mainText, subText, w, h, x, y) {
+        return __async(this, null, function* () {
+          var _a, _b;
+          const name = vtTemplateFrameName(typeKey, langCode, w, h);
+          const tpl = templatePage.children.find((c) => c.type === "FRAME" && c.name === name);
+          if (!tpl) return null;
+          const clone = tpl.clone();
+          outputPage.appendChild(clone);
+          clone.x = x;
+          clone.y = y;
+          const texts = collectTextNodes(clone);
+          if (typeKey === "lockup") {
+            const header = (_a = texts.find((t) => /productname/i.test(t.name))) != null ? _a : texts[0];
+            const sub = (_b = texts.find((t) => t !== header && /sub|header/i.test(t.name))) != null ? _b : texts.find((t) => t !== header);
+            if (header) yield setVtText(header, mainText);
+            if (sub) {
+              if (subText) yield setVtText(sub, subText);
+              else sub.remove();
+            }
+          } else {
+            if (texts[0]) yield setVtText(texts[0], mainText);
+          }
+          return clone;
+        });
+      }
       function handleGenerateVideoTitles(payload) {
         return __async(this, null, function* () {
-          var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H;
+          var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A, _B, _C, _D, _E, _F, _G, _H, _I;
           const { copyMap, languages, campaignName } = payload;
           let outputPage = figma.root.children.find((p) => p.name === PAGE_PREFIX + campaignName);
           if (!outputPage) {
@@ -1453,10 +1533,10 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
           const existing = [...outputPage.children];
           for (const n of existing) n.remove();
           const templatePage = figma.root.children.find((p) => p.name === "_Templates_Videotitle");
-          const gridCache = buildGridCache(templatePage);
+          if (templatePage) yield templatePage.loadAsync();
           const FRAME_TYPES = [
             { key: "introducing", label: "INTRODUCING" },
-            { key: "logo", label: "LOGO" },
+            { key: "logo", label: "PRODUCT LOGO" },
             { key: "lockup", label: "LOCK-UP" },
             { key: "usp1", label: "USP 01" },
             { key: "usp2", label: "USP 02" },
@@ -1466,7 +1546,7 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
             { key: "usp6", label: "USP 06" }
           ];
           const W16 = 3200, H16 = 1800;
-          const W9 = 1080, H9 = 1920;
+          const W9 = 1800, H9 = 3200;
           const COL_GAP = 300;
           const LANG_GAP = 600;
           const ROW_GAP = 400;
@@ -1555,12 +1635,23 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
               }
               if (!mainText) continue;
               send({ type: "GENERATION_PROGRESS", current: ++current, total, label: `${ft.label} \xB7 ${lang}` });
+              const langCode = (_I = LANG_CODE[lang]) != null ? _I : lang.slice(0, 2).toUpperCase();
               const y16 = rowY + Math.round((ROW_H - H16) / 2);
-              const f16 = yield generateVtFrame(outputPage, ft.key, mainText, subText, lang, W16, H16, colX, y16, campaignName);
-              applyGridsFromCache(f16, gridCache);
+              let f16 = null;
+              if (templatePage) {
+                f16 = yield cloneVtFrameFromTemplate(templatePage, outputPage, ft.key, langCode, mainText, subText, W16, H16, colX, y16);
+              }
+              if (!f16) {
+                f16 = yield generateVtFrame(outputPage, ft.key, mainText, subText, lang, W16, H16, colX, y16, campaignName);
+              }
               const y9 = rowY + Math.round((ROW_H - H9) / 2);
-              const f9 = yield generateVtFrame(outputPage, ft.key, mainText, subText, lang, W9, H9, colX + W16 + COL_GAP, y9, campaignName);
-              applyGridsFromCache(f9, gridCache);
+              let f9 = null;
+              if (templatePage) {
+                f9 = yield cloneVtFrameFromTemplate(templatePage, outputPage, ft.key, langCode, mainText, subText, W9, H9, colX + W16 + COL_GAP, y9);
+              }
+              if (!f9) {
+                f9 = yield generateVtFrame(outputPage, ft.key, mainText, subText, lang, W9, H9, colX + W16 + COL_GAP, y9, campaignName);
+              }
               current++;
             }
           }
