@@ -1482,9 +1482,11 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
           };
           add(node.fontName);
           for (let i = 0; i < len; i++) add(node.getRangeFontName(i, i + 1));
+          const loaded = /* @__PURE__ */ new Set();
           for (const fn of fonts) {
             try {
               yield figma.loadFontAsync(fn);
+              loaded.add(JSON.stringify(fn));
             } catch (e) {
             }
           }
@@ -1496,13 +1498,38 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
             if (f0 !== figma.mixed) baseFont = f0;
           }
           if (!baseFont && fonts.length) baseFont = fonts[0];
-          node.characters = text;
-          if (baseFont) {
+          if (baseFont && loaded.has(JSON.stringify(baseFont))) {
+            if (len > 0) {
+              try {
+                node.setRangeFontName(0, len, baseFont);
+              } catch (e) {
+              }
+            }
+            try {
+              node.fontName = baseFont;
+            } catch (e) {
+            }
+            node.characters = text;
             try {
               node.setRangeFontName(0, text.length, baseFont);
             } catch (e) {
             }
+            return true;
           }
+          const anyLoaded = fonts.find((f) => loaded.has(JSON.stringify(f)));
+          if (anyLoaded) {
+            try {
+              node.fontName = anyLoaded;
+            } catch (e) {
+            }
+            node.characters = text;
+            try {
+              node.setRangeFontName(0, text.length, anyLoaded);
+            } catch (e) {
+            }
+            return true;
+          }
+          return false;
         });
       }
       function cloneVtFrameFromTemplate(templatePage, outputPage, typeKey, langCode, mainText, subText, w, h, x, y) {
