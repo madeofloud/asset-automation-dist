@@ -2067,7 +2067,12 @@ FRAME ROWS (${rows.length}):`);
             return send({ type: "GIF_ERROR", message: "Select a section, frame or group." });
           }
           const container = node;
-          const frames = container.children.filter((c) => c.type === "FRAME" || c.type === "COMPONENT" || c.type === "INSTANCE").map((c) => ({ id: c.id, name: c.name, x: c.x, y: c.y, width: c.width, height: c.height }));
+          const SKIP_NAMES = /COPY\s*BRIEF|DESIGN\s*BRIEF|BRIEF|PHASE|INFO/i;
+          const frames = container.children.filter((c) => {
+            if (c.type !== "FRAME" && c.type !== "COMPONENT") return false;
+            if (SKIP_NAMES.test(c.name)) return false;
+            return true;
+          }).map((c) => ({ id: c.id, name: c.name, x: c.x, y: c.y, width: c.width, height: c.height }));
           if (frames.length === 0) {
             return send({ type: "GIF_ERROR", message: "No frames found in the selected section." });
           }
