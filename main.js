@@ -2097,21 +2097,23 @@ FRAME ROWS (${rows.length}):`);
             if (/^[A-Z]{2,4}$/.test(suffix)) return suffix;
             return `row-${idx + 1}`;
           }
-          const exportedRows = yield Promise.all(
-            rowGroups.map((rowFrames, idx) => __async(this, null, function* () {
-              return {
-                label: deriveLabel(rowFrames, idx),
-                frames: yield Promise.all(
-                  rowFrames.map((f) => __async(this, null, function* () {
-                    const frameNode = figma.getNodeById(f.id);
-                    const bytes = yield frameNode.exportAsync({ format: "PNG", constraint: { type: "SCALE", value: 1 } });
-                    return { name: f.name, width: f.width, height: f.height, bytes: Array.from(bytes) };
-                  }))
-                )
-              };
-            }))
-          );
-          send({ type: "GIF_ROWS_READY", rows: exportedRows, sectionName: node.name });
+          const rowMeta = rowGroups.map((rowFrames, idx) => ({
+            label: deriveLabel(rowFrames, idx),
+            frameCount: rowFrames.length
+          }));
+          send({ type: "GIF_ROWS_READY", rows: rowMeta, sectionName: node.name, totalRows: rowGroups.length });
+          for (let i = 0; i < rowGroups.length; i++) {
+            const rowFrames = rowGroups[i];
+            const label = deriveLabel(rowFrames, i);
+            const exportedFrames = [];
+            for (const f of rowFrames) {
+              const frameNode = figma.getNodeById(f.id);
+              const bytes = yield frameNode.exportAsync({ format: "PNG", constraint: { type: "SCALE", value: 1 } });
+              exportedFrames.push({ name: f.name, width: f.width, height: f.height, bytes: Array.from(bytes) });
+            }
+            send({ type: "GIF_ROW_DATA", rowIndex: i, label, frames: exportedFrames });
+          }
+          send({ type: "GIF_EXPORT_DONE" });
         });
       }
     }
