@@ -2060,16 +2060,16 @@ FRAME ROWS (${rows.length}):`);
         return __async(this, null, function* () {
           const selection = figma.currentPage.selection;
           if (selection.length === 0) {
-            return send({ type: "GIF_ERROR", message: "Markera en sektion i Figma f\xF6rst." });
+            return send({ type: "GIF_ERROR", message: "Select a section in Figma first." });
           }
           const node = selection[0];
           if (node.type !== "SECTION" && node.type !== "FRAME" && node.type !== "GROUP") {
-            return send({ type: "GIF_ERROR", message: "Markera en sektion, frame eller grupp." });
+            return send({ type: "GIF_ERROR", message: "Select a section, frame or group." });
           }
           const container = node;
           const frames = container.children.filter((c) => c.type === "FRAME" || c.type === "COMPONENT" || c.type === "INSTANCE").map((c) => ({ id: c.id, name: c.name, x: c.x, y: c.y, width: c.width, height: c.height }));
           if (frames.length === 0) {
-            return send({ type: "GIF_ERROR", message: "Inga frames hittades i den markerade sektionen." });
+            return send({ type: "GIF_ERROR", message: "No frames found in the selected section." });
           }
           frames.sort((a, b) => a.y - b.y || a.x - b.x);
           const rowGroups = [];
