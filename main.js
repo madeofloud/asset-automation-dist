@@ -221,6 +221,8 @@
           switch (msg.type) {
             case "GET_TEMPLATES":
               return handleGetTemplates();
+            case "CHECK_TEMPLATES":
+              return handleCheckTemplates();
             case "REGISTER_IMAGE":
               return handleRegisterImage(msg.bytes);
             case "GENERATE":
@@ -270,6 +272,12 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
           return;
         }
         send({ type: "TEMPLATES_FOUND", componentNames: [] });
+      }
+      function handleCheckTemplates() {
+        const REQUIRED_PAGES = ["_Templates_Lifestyle", "_Templates_Product", "_Templates_Flixmedia", "_Templates_Videotitle"];
+        const pageNames = figma.root.children.map((p) => p.name);
+        const missing = REQUIRED_PAGES.filter((p) => !pageNames.includes(p));
+        send({ type: "TEMPLATE_STATUS", hasTemplates: missing.length === 0, missing });
       }
       function handleRegisterImage(bytes) {
         return __async(this, null, function* () {
