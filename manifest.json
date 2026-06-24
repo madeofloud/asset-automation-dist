@@ -3,7 +3,7 @@
   "id": "marshall-ad-automation",
   "api": "1.0.0",
   "main": "main.js",
-  "ui": "index.html",
+  "ui": "https://asset-automation-omega.vercel.app/",
   "editorType": ["figma"],
   "permissions": ["currentuser"],
   "networkAccess": {

@@ -237,6 +237,8 @@
               return yield handleInspectPdp();
             case "EXPORT_ALL":
               return yield handleExportAll(msg.campaignName);
+            case "EXPORT_GIF_ROWS":
+              return yield handleExportGifRows();
             case "RESIZE":
               return figma.ui.resize(msg.width, msg.height);
             case "OPEN_URL":
@@ -2051,6 +2053,60 @@ FRAME ROWS (${rows.length}):`);
             const message = err instanceof Error ? err.message : String(err);
             send({ type: "GENERATION_ERROR", message: `Failed at step [${step}]: ${message}` });
           }
+        });
+      }
+      var GIF_ROW_THRESHOLD = 50;
+      function handleExportGifRows() {
+        return __async(this, null, function* () {
+          const selection = figma.currentPage.selection;
+          if (selection.length === 0) {
+            return send({ type: "GIF_ERROR", message: "Markera en sektion i Figma f\xF6rst." });
+          }
+          const node = selection[0];
+          if (node.type !== "SECTION" && node.type !== "FRAME" && node.type !== "GROUP") {
+            return send({ type: "GIF_ERROR", message: "Markera en sektion, frame eller grupp." });
+          }
+          const container = node;
+          const frames = container.children.filter((c) => c.type === "FRAME" || c.type === "COMPONENT" || c.type === "INSTANCE").map((c) => ({ id: c.id, name: c.name, x: c.x, y: c.y, width: c.width, height: c.height }));
+          if (frames.length === 0) {
+            return send({ type: "GIF_ERROR", message: "Inga frames hittades i den markerade sektionen." });
+          }
+          frames.sort((a, b) => a.y - b.y || a.x - b.x);
+          const rowGroups = [];
+          let currentRow = [frames[0]];
+          let rowBaseY = frames[0].y;
+          for (let i = 1; i < frames.length; i++) {
+            const f = frames[i];
+            if (Math.abs(f.y - rowBaseY) <= GIF_ROW_THRESHOLD) {
+              currentRow.push(f);
+            } else {
+              rowGroups.push(currentRow);
+              currentRow = [f];
+              rowBaseY = f.y;
+            }
+          }
+          rowGroups.push(currentRow);
+          function deriveLabel(rowFrames, idx) {
+            const parts = rowFrames[0].name.split("_");
+            const suffix = parts[parts.length - 1];
+            if (/^[A-Z]{2,4}$/.test(suffix)) return suffix;
+            return `row-${idx + 1}`;
+          }
+          const exportedRows = yield Promise.all(
+            rowGroups.map((rowFrames, idx) => __async(this, null, function* () {
+              return {
+                label: deriveLabel(rowFrames, idx),
+                frames: yield Promise.all(
+                  rowFrames.map((f) => __async(this, null, function* () {
+                    const frameNode = figma.getNodeById(f.id);
+                    const bytes = yield frameNode.exportAsync({ format: "PNG", constraint: { type: "SCALE", value: 1 } });
+                    return { name: f.name, width: f.width, height: f.height, bytes: Array.from(bytes) };
+                  }))
+                )
+              };
+            }))
+          );
+          send({ type: "GIF_ROWS_READY", rows: exportedRows, sectionName: node.name });
         });
       }
     }
