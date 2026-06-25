@@ -2434,6 +2434,7 @@ FRAME ROWS (${rows.length}):`);
       }
       function handleGifTranslateBatch() {
         return __async(this, null, function* () {
+          send({ type: "GIF_TRANSLATE_STATUS", text: "Batch handler started\u2026" });
           try {
             let collect2 = function(node) {
               visited++;
@@ -2454,7 +2455,7 @@ FRAME ROWS (${rows.length}):`);
             if (selection.length === 0) {
               return send({ type: "GIF_TRANSLATE_ERROR", message: "Select one or more sections (or frames) containing GIF frames." });
             }
-            send({ type: "GIF_TRANSLATE_STATUS", text: "Collecting frames\u2026" });
+            send({ type: "GIF_TRANSLATE_STATUS", text: `Scanning ${selection.length} selected item(s)\u2026` });
             const items = [];
             const seen = /* @__PURE__ */ new Set();
             let visited = 0;
