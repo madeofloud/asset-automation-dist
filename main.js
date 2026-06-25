@@ -2231,35 +2231,41 @@ FRAME ROWS (${rows.length}):`);
       function handleGridMakerCreate(width, height, divisionOverride) {
         return __async(this, null, function* () {
           try {
+            const selection = figma.currentPage.selection;
+            const selectedFrame = selection.find((n) => n.type === "FRAME" || n.type === "COMPONENT" || n.type === "INSTANCE");
+            if (selectedFrame) {
+              const w = selectedFrame.width;
+              const h = selectedFrame.height;
+              const layout2 = gmResolveLayout(w, h, divisionOverride);
+              const grid2 = gmDeriveGrid(w, layout2.logoW, layout2.divisionN);
+              if (selectedFrame.type === "INSTANCE") {
+                send({ type: "GRID_ERROR", message: "Select a frame (not an instance) to apply guides, or deselect to create a new grid frame." });
+                return;
+              }
+              ;
+              selectedFrame.layoutGrids = buildLayoutGrids(grid2);
+              figma.currentPage.selection = [selectedFrame];
+              figma.viewport.scrollAndZoomIntoView([selectedFrame]);
+              send({ type: "GRID_CREATED", name: `guides on "${selectedFrame.name}"` });
+              return;
+            }
             const layout = gmResolveLayout(width, height, divisionOverride);
             const grid = gmDeriveGrid(width, layout.logoW, layout.divisionN);
+            let outputPage = figma.root.children.find((p) => p.name === PAGE_PREFIX + "Grids");
+            if (!outputPage) {
+              outputPage = figma.createPage();
+              outputPage.name = PAGE_PREFIX + "Grids";
+            }
+            figma.currentPage = outputPage;
             const frame = figma.createFrame();
             frame.name = `Grid ${width}\xD7${height} (1/${layout.divisionN} ${layout.kind})`;
             frame.resize(width, height);
-            frame.x = figma.viewport.center.x - width / 2;
-            frame.y = figma.viewport.center.y - height / 2;
+            const existing = outputPage.children;
+            const maxX = existing.length ? Math.max(...existing.map((c) => c.x + c.width)) : 0;
+            frame.x = existing.length ? maxX + 100 : 0;
+            frame.y = 0;
             frame.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
-            const layoutGrids = [
-              {
-                pattern: "COLUMNS",
-                alignment: "STRETCH",
-                gutterSize: grid.gutter,
-                count: grid.columns,
-                offset: grid.margin,
-                visible: true,
-                color: { r: 1, g: 0, b: 0, a: 0.4 }
-              },
-              {
-                pattern: "ROWS",
-                alignment: "STRETCH",
-                gutterSize: 0,
-                count: 1,
-                offset: grid.margin,
-                visible: true,
-                color: { r: 0.08, g: 1, b: 4e-3, a: 0.5 }
-              }
-            ];
-            frame.layoutGrids = layoutGrids;
+            frame.layoutGrids = buildLayoutGrids(grid);
             const svg = layout.kind === "box" ? BOX_LOGO_SVG : SCRIPT_LOGO_SVG;
             const logoNode = figma.createNodeFromSvg(svg);
             logoNode.name = layout.kind === "box" ? "Box logo" : "Script logo";
@@ -2275,6 +2281,28 @@ FRAME ROWS (${rows.length}):`);
             send({ type: "GRID_ERROR", message });
           }
         });
+      }
+      function buildLayoutGrids(grid) {
+        return [
+          {
+            pattern: "COLUMNS",
+            alignment: "STRETCH",
+            gutterSize: grid.gutter,
+            count: grid.columns,
+            offset: grid.margin,
+            visible: true,
+            color: { r: 1, g: 0, b: 0, a: 0.4 }
+          },
+          {
+            pattern: "ROWS",
+            alignment: "STRETCH",
+            gutterSize: 0,
+            count: 1,
+            offset: grid.margin,
+            visible: true,
+            color: { r: 0.08, g: 1, b: 4e-3, a: 0.5 }
+          }
+        ];
       }
     }
   });
