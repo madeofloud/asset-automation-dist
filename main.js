@@ -2420,8 +2420,8 @@ FRAME ROWS (${rows.length}):`);
             }
             send({
               type: "GIF_TRANSLATE_DATA",
-              gifBytes: Array.from(result.gifBytes),
-              overlayBytes: Array.from(result.overlayBytes),
+              gifBytes: result.gifBytes,
+              overlayBytes: result.overlayBytes,
               width: result.width,
               height: result.height,
               frameName: result.frameName
@@ -2482,8 +2482,8 @@ FRAME ROWS (${rows.length}):`);
               type: "GIF_TRANSLATE_BATCH_ITEM_DATA",
               nodeId,
               skipped: false,
-              gifBytes: Array.from(result.gifBytes),
-              overlayBytes: Array.from(result.overlayBytes),
+              gifBytes: result.gifBytes,
+              overlayBytes: result.overlayBytes,
               width: result.width,
               height: result.height,
               frameName: result.frameName
