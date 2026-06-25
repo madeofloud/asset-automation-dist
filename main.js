@@ -2312,9 +2312,9 @@ FRAME ROWS (${rows.length}):`);
         });
       }
       function buildLayoutGrids(grid) {
-        const red = { r: 1, g: 0, b: 0, a: 0.5 };
-        return [
-          // Columns: N columns with gutter, inset by margin left/right (vertical red guides)
+        const red = { r: 1, g: 0, b: 0, a: 0.15 };
+        const grids = [
+          // Columns: N columns with gutter, inset by margin left/right
           {
             pattern: "COLUMNS",
             alignment: "STRETCH",
@@ -2323,18 +2323,18 @@ FRAME ROWS (${rows.length}):`);
             offset: grid.margin,
             visible: true,
             color: red
-          },
-          // Rows: a single stretched row inset by margin top/bottom (horizontal red guides)
-          {
-            pattern: "ROWS",
-            alignment: "STRETCH",
-            gutterSize: grid.gutter,
-            count: 1,
-            offset: grid.margin,
-            visible: true,
-            color: red
           }
         ];
+        grids.push({
+          pattern: "ROWS",
+          alignment: "STRETCH",
+          gutterSize: 0,
+          count: 1,
+          offset: grid.margin,
+          visible: true,
+          color: { r: 1, g: 0, b: 0, a: 0.15 }
+        });
+        return grids;
       }
     }
   });
