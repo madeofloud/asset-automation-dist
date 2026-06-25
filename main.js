@@ -2145,41 +2145,57 @@ FRAME ROWS (${rows.length}):`);
       function gmSuggestDivision(w) {
         return Math.min(8, Math.max(2, Math.round(w / 215)));
       }
+      function gmClassify(width, height) {
+        if (height < 100 && width > height) return "narrowH";
+        if (width < 160 && height > width) return "narrowV";
+        return "standard";
+      }
       function gmResolveLayout(width, height, divisionOverride) {
-        const horizontal = width >= height;
-        let kind = "box", fullHeight = false, scale15 = false, note = "";
-        if (horizontal) {
+        const klass = gmClassify(width, height);
+        let kind = "box";
+        let fullHeight = false;
+        let scale15 = false;
+        let useDefaultGrid = false;
+        let note = "";
+        if (klass === "narrowH") {
+          useDefaultGrid = true;
           if (width < 600) {
             kind = "script";
-            note = "Width < 600 \u2192 script.";
+            note = "Narrow horizontal, width < 600 \u2192 script.";
           } else if (height >= 100) {
             kind = "box";
-            note = "Standard.";
+            useDefaultGrid = false;
+            note = "Narrow horizontal, height \u2265 100 \u2192 standard.";
           } else if (height >= 81) {
             kind = "box";
             fullHeight = true;
-            note = "Height 81\u201399 \u2192 box full height.";
+            note = "Narrow horizontal, height 81\u201399 \u2192 box full height.";
           } else {
             kind = "script";
-            note = "Height \u2264 80 \u2192 script.";
+            note = "Narrow horizontal, height \u2264 80 \u2192 script.";
           }
-        } else {
+        } else if (klass === "narrowV") {
+          useDefaultGrid = true;
           if (height < 600) {
             kind = "script";
             if (width <= 159) scale15 = true;
-            note = "Height < 600 \u2192 script.";
+            note = "Narrow vertical, height < 600 \u2192 script" + (scale15 ? " \xD71.5." : ".");
           } else if (width >= 160) {
             kind = "box";
-            note = "Standard.";
+            useDefaultGrid = false;
+            note = "Narrow vertical, width \u2265 160 \u2192 standard.";
           } else if (width >= 121) {
             kind = "box";
             scale15 = true;
-            note = "Width 121\u2013159 \u2192 box \xD71.5.";
+            note = "Narrow vertical, width 121\u2013159 \u2192 box \xD71.5.";
           } else {
             kind = "script";
             scale15 = true;
-            note = "Width \u2264 120 \u2192 script \xD71.5.";
+            note = "Narrow vertical, width \u2264 120 \u2192 script \xD71.5.";
           }
+        } else {
+          kind = "box";
+          note = "Standard format.";
         }
         let N = divisionOverride != null ? divisionOverride : gmSuggestDivision(width);
         if (kind === "script") N = Math.max(2, N - 1);
@@ -2192,26 +2208,36 @@ FRAME ROWS (${rows.length}):`);
           logoH = height;
           logoW = logoH * BOX_ASPECT;
         }
-        return { kind, fullHeight, scale15, divisionN: N, logoW, logoH, note };
+        return { klass, kind, fullHeight, scale15, useDefaultGrid, divisionN: N, logoW, logoH, note };
       }
-      function gmDeriveGrid(width, logoW, N) {
-        const baseUnit = logoW / UNITS_WIDE;
-        const margin = 2 * baseUnit;
-        const gutter = 2 * baseUnit;
-        const columns = Math.max(1, N);
+      function gmDeriveGrid(width, logoW, N, useDefaultGrid) {
+        let baseUnit, margin, gutter, columns;
+        if (useDefaultGrid) {
+          margin = Math.max(8, Math.round(width * 0.0124));
+          gutter = Math.max(12, Math.round(width * 0.0247));
+          baseUnit = margin / 2;
+          columns = Math.max(1, Math.round(width / 160));
+        } else {
+          baseUnit = logoW / UNITS_WIDE;
+          margin = 2 * baseUnit;
+          gutter = 2 * baseUnit;
+          columns = Math.max(1, N);
+        }
         const colWidth = (width - 2 * margin - (columns - 1) * gutter) / columns;
         return { baseUnit, margin, gutter, columns, colWidth };
       }
       function handleGridMakerPreview(width, height, divisionOverride) {
         return __async(this, null, function* () {
           const layout = gmResolveLayout(width, height, divisionOverride);
-          const grid = gmDeriveGrid(width, layout.logoW, layout.divisionN);
+          const grid = gmDeriveGrid(width, layout.logoW, layout.divisionN, layout.useDefaultGrid);
           send({
             type: "GRID_PREVIEW",
             layout: {
               kind: layout.kind,
+              klass: layout.klass,
               fullHeight: layout.fullHeight,
               scale15: layout.scale15,
+              useDefaultGrid: layout.useDefaultGrid,
               divisionN: layout.divisionN,
               logoW: Math.round(layout.logoW),
               logoH: Math.round(layout.logoH),
@@ -2237,7 +2263,7 @@ FRAME ROWS (${rows.length}):`);
               const w = selectedFrame.width;
               const h = selectedFrame.height;
               const layout2 = gmResolveLayout(w, h, divisionOverride);
-              const grid2 = gmDeriveGrid(w, layout2.logoW, layout2.divisionN);
+              const grid2 = gmDeriveGrid(w, layout2.logoW, layout2.divisionN, layout2.useDefaultGrid);
               if (selectedFrame.type === "INSTANCE") {
                 send({ type: "GRID_ERROR", message: "Select a frame (not an instance) to apply guides, or deselect to create a new grid frame." });
                 return;
@@ -2250,7 +2276,7 @@ FRAME ROWS (${rows.length}):`);
               return;
             }
             const layout = gmResolveLayout(width, height, divisionOverride);
-            const grid = gmDeriveGrid(width, layout.logoW, layout.divisionN);
+            const grid = gmDeriveGrid(width, layout.logoW, layout.divisionN, layout.useDefaultGrid);
             let outputPage = figma.root.children.find((p) => p.name === PAGE_PREFIX + "Grids");
             if (!outputPage) {
               outputPage = figma.createPage();
