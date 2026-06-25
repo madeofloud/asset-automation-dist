@@ -254,6 +254,10 @@
               return yield handleExportGifRows();
             case "GIF_TRANSLATE_EXTRACT":
               return yield handleGifTranslateExtract();
+            case "GIF_TRANSLATE_BATCH":
+              return yield handleGifTranslateBatch();
+            case "GIF_TRANSLATE_BATCH_ITEM":
+              return yield handleGifTranslateBatchItem(msg.nodeId);
             case "GRID_PREVIEW":
               return yield handleGridMakerPreview(msg.width, msg.height, msg.division);
             case "GRID_CREATE":
@@ -2338,94 +2342,147 @@ FRAME ROWS (${rows.length}):`);
         });
         return grids;
       }
+      function extractTranslateData(frame) {
+        return __async(this, null, function* () {
+          if (frame.type !== "FRAME" && frame.type !== "COMPONENT" && frame.type !== "INSTANCE" && frame.type !== "GROUP") {
+            return { ok: false, reason: "Not a frame or group." };
+          }
+          const fw = frame.width;
+          const fh = frame.height;
+          const fillHost = frame;
+          function findGifFill(node) {
+            const fills = node.fills;
+            if (Array.isArray(fills)) {
+              for (const f of fills) {
+                if (f.type === "IMAGE" && f.imageHash) return f.imageHash;
+              }
+            }
+            if ("children" in node) {
+              for (const child of node.children) {
+                const h = findGifFill(child);
+                if (h) return h;
+              }
+            }
+            return null;
+          }
+          const gifHash = findGifFill(frame);
+          if (!gifHash) return { ok: false, reason: "No image/GIF fill found." };
+          const image = figma.getImageByHash(gifHash);
+          if (!image) return { ok: false, reason: "Could not read the GIF image data." };
+          const gifBytes = yield image.getBytesAsync();
+          const hidden = [];
+          function hideNonText(node) {
+            if (node.type === "TEXT") return;
+            if ("children" in node) {
+              const kids = node.children;
+              const hasTextDescendant = kids.some(function check(k) {
+                if (k.type === "TEXT") return true;
+                if ("children" in k) return k.children.some(check);
+                return false;
+              });
+              if (hasTextDescendant) {
+                kids.forEach(hideNonText);
+                return;
+              }
+            }
+            if ("visible" in node) {
+              hidden.push({ node, prev: node.visible });
+              node.visible = false;
+            }
+          }
+          for (const child of frame.children) hideNonText(child);
+          let prevFills = null;
+          if (Array.isArray(fillHost.fills)) {
+            prevFills = fillHost.fills;
+            fillHost.fills = [];
+          }
+          const overlayBytes = yield frame.exportAsync({
+            format: "PNG",
+            constraint: { type: "SCALE", value: 1 }
+          });
+          if (prevFills) fillHost.fills = prevFills;
+          for (const h of hidden) {
+            if ("visible" in h.node) h.node.visible = h.prev;
+          }
+          return { ok: true, gifBytes, overlayBytes, width: fw, height: fh, frameName: frame.name };
+        });
+      }
       function handleGifTranslateExtract() {
         return __async(this, null, function* () {
           try {
-            let findGifFill2 = function(node) {
-              const fills = node.fills;
-              if (Array.isArray(fills)) {
-                for (const f of fills) {
-                  if (f.type === "IMAGE" && f.imageHash) {
-                    return f.imageHash;
-                  }
-                }
-              }
-              if ("children" in node) {
-                for (const child of node.children) {
-                  const h = findGifFill2(child);
-                  if (h) return h;
-                }
-              }
-              return null;
-            }, hideNonText2 = function(node) {
-              if (node.type === "TEXT") return;
-              if ("children" in node) {
-                const kids = node.children;
-                const hasTextDescendant = kids.some(function check(k) {
-                  if (k.type === "TEXT") return true;
-                  if ("children" in k) return k.children.some(check);
-                  return false;
-                });
-                if (hasTextDescendant) {
-                  kids.forEach(hideNonText2);
-                  return;
-                }
-              }
-              if ("visible" in node) {
-                hidden.push({ node, prev: node.visible });
-                node.visible = false;
-              }
-            };
-            var findGifFill = findGifFill2, hideNonText = hideNonText2;
             const selection = figma.currentPage.selection;
             if (selection.length === 0) {
               return send({ type: "GIF_TRANSLATE_ERROR", message: "Select a frame containing an animated GIF." });
             }
-            const frame = selection[0];
-            if (frame.type !== "FRAME" && frame.type !== "COMPONENT" && frame.type !== "INSTANCE" && frame.type !== "GROUP") {
-              return send({ type: "GIF_TRANSLATE_ERROR", message: "Selection must be a frame or group." });
-            }
-            const fw = frame.width;
-            const fh = frame.height;
-            let gifHash = null;
-            const fillHost = frame;
-            gifHash = findGifFill2(frame);
-            if (!gifHash) {
-              return send({ type: "GIF_TRANSLATE_ERROR", message: "No image/GIF fill found in the selected frame." });
-            }
-            const image = figma.getImageByHash(gifHash);
-            if (!image) {
-              return send({ type: "GIF_TRANSLATE_ERROR", message: "Could not read the GIF image data." });
-            }
-            const gifBytes = yield image.getBytesAsync();
-            const hidden = [];
-            for (const child of frame.children) {
-              hideNonText2(child);
-            }
-            let prevFills = null;
-            if (Array.isArray(fillHost.fills)) {
-              prevFills = fillHost.fills;
-              fillHost.fills = [];
-            }
-            const overlayBytes = yield frame.exportAsync({
-              format: "PNG",
-              constraint: { type: "SCALE", value: 1 }
-            });
-            if (prevFills) fillHost.fills = prevFills;
-            for (const h of hidden) {
-              if ("visible" in h.node) h.node.visible = h.prev;
+            const result = yield extractTranslateData(selection[0]);
+            if (!result.ok) {
+              return send({ type: "GIF_TRANSLATE_ERROR", message: result.reason });
             }
             send({
               type: "GIF_TRANSLATE_DATA",
-              gifBytes: Array.from(gifBytes),
-              overlayBytes: Array.from(overlayBytes),
-              width: fw,
-              height: fh,
-              frameName: frame.name
+              gifBytes: Array.from(result.gifBytes),
+              overlayBytes: Array.from(result.overlayBytes),
+              width: result.width,
+              height: result.height,
+              frameName: result.frameName
             });
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             send({ type: "GIF_TRANSLATE_ERROR", message });
+          }
+        });
+      }
+      function handleGifTranslateBatch() {
+        return __async(this, null, function* () {
+          try {
+            const selection = figma.currentPage.selection;
+            if (selection.length === 0) {
+              return send({ type: "GIF_TRANSLATE_ERROR", message: "Select a section (or frame) containing GIF frames." });
+            }
+            const root = selection[0];
+            let items = [];
+            if ("children" in root) {
+              const kids = root.children;
+              items = kids.filter((n) => n.type === "FRAME" || n.type === "COMPONENT" || n.type === "INSTANCE");
+            }
+            if (items.length === 0 && (root.type === "FRAME" || root.type === "COMPONENT" || root.type === "INSTANCE")) {
+              items = [root];
+            }
+            if (items.length === 0) {
+              return send({ type: "GIF_TRANSLATE_ERROR", message: "No frames found in the selection." });
+            }
+            const meta = items.map((n) => ({ id: n.id, name: n.name }));
+            send({ type: "GIF_TRANSLATE_BATCH_READY", items: meta, sectionName: root.name });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "GIF_TRANSLATE_ERROR", message });
+          }
+        });
+      }
+      function handleGifTranslateBatchItem(nodeId) {
+        return __async(this, null, function* () {
+          try {
+            const node = yield figma.getNodeByIdAsync(nodeId);
+            if (!node) {
+              return send({ type: "GIF_TRANSLATE_BATCH_ITEM_DATA", nodeId, skipped: true, reason: "Node not found." });
+            }
+            const result = yield extractTranslateData(node);
+            if (!result.ok) {
+              return send({ type: "GIF_TRANSLATE_BATCH_ITEM_DATA", nodeId, skipped: true, reason: result.reason, frameName: node.name });
+            }
+            send({
+              type: "GIF_TRANSLATE_BATCH_ITEM_DATA",
+              nodeId,
+              skipped: false,
+              gifBytes: Array.from(result.gifBytes),
+              overlayBytes: Array.from(result.overlayBytes),
+              width: result.width,
+              height: result.height,
+              frameName: result.frameName
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "GIF_TRANSLATE_BATCH_ITEM_DATA", nodeId, skipped: true, reason: message });
           }
         });
       }
