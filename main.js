@@ -2435,24 +2435,32 @@ FRAME ROWS (${rows.length}):`);
       function handleGifTranslateBatch() {
         return __async(this, null, function* () {
           try {
+            let collect2 = function(node) {
+              if (node.type === "FRAME" || node.type === "COMPONENT" || node.type === "INSTANCE") {
+                if (!seen.has(node.id)) {
+                  seen.add(node.id);
+                  items.push(node);
+                }
+                return;
+              }
+              if ("children" in node) {
+                for (const child of node.children) collect2(child);
+              }
+            };
+            var collect = collect2;
             const selection = figma.currentPage.selection;
             if (selection.length === 0) {
-              return send({ type: "GIF_TRANSLATE_ERROR", message: "Select a section (or frame) containing GIF frames." });
+              return send({ type: "GIF_TRANSLATE_ERROR", message: "Select one or more sections (or frames) containing GIF frames." });
             }
-            const root = selection[0];
-            let items = [];
-            if ("children" in root) {
-              const kids = root.children;
-              items = kids.filter((n) => n.type === "FRAME" || n.type === "COMPONENT" || n.type === "INSTANCE");
-            }
-            if (items.length === 0 && (root.type === "FRAME" || root.type === "COMPONENT" || root.type === "INSTANCE")) {
-              items = [root];
-            }
+            const items = [];
+            const seen = /* @__PURE__ */ new Set();
+            for (const sel of selection) collect2(sel);
             if (items.length === 0) {
               return send({ type: "GIF_TRANSLATE_ERROR", message: "No frames found in the selection." });
             }
             const meta = items.map((n) => ({ id: n.id, name: n.name }));
-            send({ type: "GIF_TRANSLATE_BATCH_READY", items: meta, sectionName: root.name });
+            const sectionName = selection.length === 1 ? selection[0].name : `${selection.length}_sections`;
+            send({ type: "GIF_TRANSLATE_BATCH_READY", items: meta, sectionName });
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             send({ type: "GIF_TRANSLATE_ERROR", message });
