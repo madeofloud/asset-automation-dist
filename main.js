@@ -2436,14 +2436,16 @@ FRAME ROWS (${rows.length}):`);
         return __async(this, null, function* () {
           try {
             let collect2 = function(node) {
-              if (node.type === "FRAME" || node.type === "COMPONENT" || node.type === "INSTANCE") {
+              visited++;
+              const t = node.type;
+              if (t === "FRAME" || t === "COMPONENT" || t === "INSTANCE") {
                 if (!seen.has(node.id)) {
                   seen.add(node.id);
                   items.push(node);
                 }
                 return;
               }
-              if ("children" in node) {
+              if ((t === "SECTION" || t === "GROUP" || t === "PAGE") && "children" in node) {
                 for (const child of node.children) collect2(child);
               }
             };
@@ -2452,15 +2454,17 @@ FRAME ROWS (${rows.length}):`);
             if (selection.length === 0) {
               return send({ type: "GIF_TRANSLATE_ERROR", message: "Select one or more sections (or frames) containing GIF frames." });
             }
+            send({ type: "GIF_TRANSLATE_STATUS", text: "Collecting frames\u2026" });
             const items = [];
             const seen = /* @__PURE__ */ new Set();
+            let visited = 0;
             for (const sel of selection) collect2(sel);
             if (items.length === 0) {
               return send({ type: "GIF_TRANSLATE_ERROR", message: "No frames found in the selection." });
             }
             const meta = items.map((n) => ({ id: n.id, name: n.name }));
             const sectionName = selection.length === 1 ? selection[0].name : `${selection.length}_sections`;
-            send({ type: "GIF_TRANSLATE_BATCH_READY", items: meta, sectionName });
+            send({ type: "GIF_TRANSLATE_BATCH_READY", items: meta, sectionName, visited });
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             send({ type: "GIF_TRANSLATE_ERROR", message });
@@ -2474,6 +2478,7 @@ FRAME ROWS (${rows.length}):`);
             if (!node) {
               return send({ type: "GIF_TRANSLATE_BATCH_ITEM_DATA", nodeId, skipped: true, reason: "Node not found." });
             }
+            send({ type: "GIF_TRANSLATE_STATUS", text: `Extracting ${node.name}\u2026` });
             const result = yield extractTranslateData(node);
             if (!result.ok) {
               return send({ type: "GIF_TRANSLATE_BATCH_ITEM_DATA", nodeId, skipped: true, reason: result.reason, frameName: node.name });
