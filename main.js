@@ -2350,26 +2350,31 @@ FRAME ROWS (${rows.length}):`);
           const fw = frame.width;
           const fh = frame.height;
           const fillHost = frame;
-          function findGifFill(node) {
+          const imageHashes = [];
+          function collectImageFills(node) {
             const fills = node.fills;
             if (Array.isArray(fills)) {
               for (const f of fills) {
-                if (f.type === "IMAGE" && f.imageHash) return f.imageHash;
+                if (f.type === "IMAGE" && f.imageHash) imageHashes.push(f.imageHash);
               }
             }
             if ("children" in node) {
-              for (const child of node.children) {
-                const h = findGifFill(child);
-                if (h) return h;
-              }
+              for (const child of node.children) collectImageFills(child);
             }
-            return null;
           }
-          const gifHash = findGifFill(frame);
-          if (!gifHash) return { ok: false, reason: "No image/GIF fill found." };
-          const image = figma.getImageByHash(gifHash);
-          if (!image) return { ok: false, reason: "Could not read the GIF image data." };
-          const gifBytes = yield image.getBytesAsync();
+          collectImageFills(frame);
+          if (imageHashes.length === 0) return { ok: false, reason: "No image fill found." };
+          let gifBytes = null;
+          for (const hash of imageHashes) {
+            const img = figma.getImageByHash(hash);
+            if (!img) continue;
+            const bytes = yield img.getBytesAsync();
+            if (bytes.length >= 6 && bytes[0] === 71 && bytes[1] === 73 && bytes[2] === 70) {
+              gifBytes = bytes;
+              break;
+            }
+          }
+          if (!gifBytes) return { ok: false, reason: "No animated GIF fill (only static images)." };
           const hidden = [];
           function hideNonText(node) {
             if (node.type === "TEXT") return;
@@ -2434,7 +2439,6 @@ FRAME ROWS (${rows.length}):`);
       }
       function handleGifTranslateBatch() {
         return __async(this, null, function* () {
-          send({ type: "GIF_TRANSLATE_STATUS", text: "Batch handler started\u2026" });
           try {
             let collect2 = function(node) {
               visited++;
