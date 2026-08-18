@@ -2584,26 +2584,47 @@ FRAME ROWS (${rows.length}):`);
             if (sourceFrames.length === 0) {
               return send({ type: "GENERATION_ERROR", message: "No frames/components found in the selection." });
             }
-            const minX = Math.min(...sourceFrames.map((f) => f.x));
-            const maxY = Math.max(...sourceFrames.map((f) => f.y + f.height));
-            const rowGap = 200;
+            const srcMinX = Math.min(...sourceFrames.map((f) => f.x));
+            const srcMinY = Math.min(...sourceFrames.map((f) => f.y));
+            const srcMaxX = Math.max(...sourceFrames.map((f) => f.x + f.width));
+            const srcMaxY = Math.max(...sourceFrames.map((f) => f.y + f.height));
+            const setWidth = srcMaxX - srcMinX;
+            const setHeight = srcMaxY - srcMinY;
             const page = figma.currentPage;
+            step = "find empty space";
+            let lowestY = 0;
+            for (const node of page.children) {
+              if ("y" in node && "height" in node) {
+                lowestY = Math.max(lowestY, node.y + node.height);
+              }
+            }
+            const OUTPUT_GAP = 800;
+            const ROW_GAP = 400;
+            const startY = lowestY + OUTPUT_GAP;
+            const startX = srcMinX;
             const total = targetCodes.length * sourceFrames.length;
             let done = 0;
             let built = 0;
-            step = "generate language rows";
-            let rowOffset = 0;
+            step = "generate language sections";
+            let rowIndex = 0;
             for (const code of targetCodes) {
-              rowOffset++;
               const lang = (_c = LANG_MAP[code]) != null ? _c : code;
-              const rowHeight = Math.max(...sourceFrames.map((f) => f.height));
-              const rowY = maxY + rowGap + (rowOffset - 1) * (rowHeight + rowGap);
+              const rowY = startY + rowIndex * (setHeight + ROW_GAP);
+              const section = figma.createSection();
+              section.name = `${code} \u2014 ${lang}`;
+              page.appendChild(section);
+              section.x = startX - 100;
+              section.y = rowY - 100;
+              try {
+                section.resizeWithoutConstraints(setWidth + 200, setHeight + 200);
+              } catch (e) {
+              }
               for (const src of sourceFrames) {
                 const clone = src.clone();
-                page.appendChild(clone);
-                clone.x = src.x;
-                clone.y = rowY + (src.y - Math.min(...sourceFrames.map((f) => f.y)));
-                clone.name = src.name.replace(/^EN\//, `${code}/`).replace(/^[A-Z]{2}\//, `${code}/`);
+                section.appendChild(clone);
+                clone.x = src.x - srcMinX + 100;
+                clone.y = src.y - srcMinY + 100;
+                clone.name = src.name.replace(/^[A-Z]{2}\//, `${code}/`);
                 yield translateFrame(clone, code);
                 built++;
                 done++;
@@ -2611,8 +2632,10 @@ FRAME ROWS (${rows.length}):`);
                   send({ type: "GENERATION_PROGRESS", current: done, total, label: `${lang} \u2014 ${clone.name.slice(0, 22)}` });
                 }
               }
+              rowIndex++;
             }
             step = "finalize";
+            figma.viewport.scrollAndZoomIntoView(page.children.slice(-targetCodes.length));
             send({ type: "GENERATION_COMPLETE", frameCount: built, pageName: page.name });
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
