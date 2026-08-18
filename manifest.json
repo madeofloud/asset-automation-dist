@@ -9,8 +9,9 @@
   "networkAccess": {
     "allowedDomains": [
       "https://raw.githubusercontent.com",
-      "https://api.anthropic.com"
+      "https://api.anthropic.com",
+      "https://asset-automation-convert.vercel.app"
     ],
-    "reasoning": "Check for plugin updates (version.json) and AI copy/image adaptation."
+    "reasoning": "Check for plugin updates (version.json), AI copy/image adaptation, and WebM→MP4 video conversion."
   }
 }
