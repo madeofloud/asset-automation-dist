@@ -248,6 +248,8 @@
               return yield handleCreatePdpComponents(msg.campaignName);
             case "INSPECT_PDP":
               return yield handleInspectPdp();
+            case "MANUAL_TRANSLATE":
+              return yield handleManualTranslate(msg.extracted);
             case "EXPORT_ALL":
               return yield handleExportAll(msg.campaignName);
             case "EXPORT_GIF_ROWS":
@@ -2501,6 +2503,120 @@ FRAME ROWS (${rows.length}):`);
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             send({ type: "GIF_TRANSLATE_BATCH_ITEM_DATA", nodeId, skipped: true, reason: message });
+          }
+        });
+      }
+      function handleManualTranslate(extracted) {
+        return __async(this, null, function* () {
+          var _a, _b, _c;
+          let step = "init";
+          try {
+            if (!extracted || Object.keys(extracted).length === 0) {
+              return send({ type: "GENERATION_ERROR", message: "No extracted manual data. Run extraction first." });
+            }
+            step = "check selection";
+            const selection = figma.currentPage.selection;
+            if (selection.length === 0) {
+              return send({ type: "GENERATION_ERROR", message: "Select the section containing your English hotspot components." });
+            }
+            const root = selection[0];
+            if (root.type !== "SECTION" && root.type !== "FRAME" && root.type !== "GROUP") {
+              return send({ type: "GENERATION_ERROR", message: "Selection must be a section, frame or group." });
+            }
+            const LANG_MAP = {
+              EN: "English",
+              DE: "German",
+              ES: "Spanish",
+              FR: "French",
+              IT: "Italian",
+              CN: "Chinese",
+              JP: "Japanese",
+              KO: "Korean",
+              NL: "Dutch",
+              SE: "Swedish"
+            };
+            const langCodes = /* @__PURE__ */ new Set();
+            for (const byLang of Object.values(extracted)) {
+              for (const code of Object.keys(byLang)) {
+                if (code !== "EN" && ((_a = byLang[code]) == null ? void 0 : _a.trim())) langCodes.add(code);
+              }
+            }
+            if (langCodes.size === 0) {
+              return send({ type: "GENERATION_ERROR", message: "No non-English translations found in the extracted data." });
+            }
+            const targetCodes = Array.from(langCodes);
+            const norm = (s) => s.replace(/\s+/g, " ").trim().toLowerCase();
+            const byEnglish = {};
+            for (const [label, byLang] of Object.entries(extracted)) {
+              const en = (_b = byLang["EN"]) != null ? _b : label;
+              byEnglish[norm(en)] = byLang;
+              byEnglish[norm(label)] = byLang;
+            }
+            function setText(node, value) {
+              return __async(this, null, function* () {
+                try {
+                  yield figma.loadFontAsync(node.fontName);
+                } catch (e) {
+                }
+                try {
+                  node.characters = value;
+                } catch (e) {
+                }
+              });
+            }
+            function translateFrame(container, code) {
+              return __async(this, null, function* () {
+                if (!("findAll" in container)) return;
+                const texts = container.findAll((n) => n.type === "TEXT");
+                for (const t of texts) {
+                  const english = t.characters;
+                  if (!english.trim()) continue;
+                  const hit = byEnglish[norm(english)];
+                  const translated = hit == null ? void 0 : hit[code];
+                  if (translated && translated.trim()) yield setText(t, translated);
+                }
+              });
+            }
+            step = "collect source frames";
+            const sourceFrames = root.children.filter(
+              (c) => c.type === "FRAME" || c.type === "COMPONENT" || c.type === "INSTANCE"
+            );
+            if (sourceFrames.length === 0) {
+              return send({ type: "GENERATION_ERROR", message: "No frames/components found in the selection." });
+            }
+            const minX = Math.min(...sourceFrames.map((f) => f.x));
+            const maxY = Math.max(...sourceFrames.map((f) => f.y + f.height));
+            const rowGap = 200;
+            const page = figma.currentPage;
+            const total = targetCodes.length * sourceFrames.length;
+            let done = 0;
+            let built = 0;
+            step = "generate language rows";
+            let rowOffset = 0;
+            for (const code of targetCodes) {
+              rowOffset++;
+              const lang = (_c = LANG_MAP[code]) != null ? _c : code;
+              const rowHeight = Math.max(...sourceFrames.map((f) => f.height));
+              const rowY = maxY + rowGap + (rowOffset - 1) * (rowHeight + rowGap);
+              for (const src of sourceFrames) {
+                const clone = src.clone();
+                page.appendChild(clone);
+                clone.x = src.x;
+                clone.y = rowY + (src.y - Math.min(...sourceFrames.map((f) => f.y)));
+                clone.name = src.name.replace(/^EN\//, `${code}/`).replace(/^[A-Z]{2}\//, `${code}/`);
+                yield translateFrame(clone, code);
+                built++;
+                done++;
+                if (done % 3 === 0 || done === total) {
+                  send({ type: "GENERATION_PROGRESS", current: done, total, label: `${lang} \u2014 ${clone.name.slice(0, 22)}` });
+                }
+              }
+            }
+            step = "finalize";
+            send({ type: "GENERATION_COMPLETE", frameCount: built, pageName: page.name });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "GENERATION_ERROR", message: `Failed at step [${step}]: ${message}` });
           }
         });
       }
