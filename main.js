@@ -2511,6 +2511,24 @@ FRAME ROWS (${rows.length}):`);
           var _a, _b, _c;
           let step = "init";
           try {
+            let lookupTranslation2 = function(englishText, code) {
+              var _a2;
+              const n = norm(englishText);
+              let entry = byEnglish[n];
+              if (!entry) {
+                const clean = (s) => s.replace(/[^a-z0-9]/g, "");
+                const target = clean(n);
+                const k = englishKeys.find((key) => clean(key) === target);
+                if (k) entry = byEnglish[k];
+              }
+              if (!entry) {
+                const k = englishKeys.find((key) => key.length > 3 && (key.includes(n) || n.includes(key)));
+                if (k) entry = byEnglish[k];
+              }
+              if (!entry) return null;
+              return (_a2 = entry[code]) != null ? _a2 : null;
+            };
+            var lookupTranslation = lookupTranslation2;
             if (!extracted || Object.keys(extracted).length === 0) {
               return send({ type: "GENERATION_ERROR", message: "No extracted manual data. Run extraction first." });
             }
@@ -2552,6 +2570,7 @@ FRAME ROWS (${rows.length}):`);
               byEnglish[norm(en)] = byLang;
               byEnglish[norm(label)] = byLang;
             }
+            const englishKeys = Object.keys(byEnglish);
             function setText(node, value) {
               return __async(this, null, function* () {
                 try {
@@ -2564,30 +2583,34 @@ FRAME ROWS (${rows.length}):`);
                 }
               });
             }
-            function translateFrame(container, code) {
+            function translateContainer(container, code) {
               return __async(this, null, function* () {
-                if (!("findAll" in container)) return;
+                if (!("findAll" in container)) return 0;
+                let hits = 0;
                 const texts = container.findAll((n) => n.type === "TEXT");
                 for (const t of texts) {
                   const english = t.characters;
                   if (!english.trim()) continue;
-                  const hit = byEnglish[norm(english)];
-                  const translated = hit == null ? void 0 : hit[code];
-                  if (translated && translated.trim()) yield setText(t, translated);
+                  const translated = lookupTranslation2(english, code);
+                  if (translated && translated.trim() && translated.trim() !== english.trim()) {
+                    yield setText(t, translated);
+                    hits++;
+                  }
                 }
+                return hits;
               });
             }
-            step = "collect source frames";
-            const sourceFrames = root.children.filter(
+            step = "collect source components";
+            const sourceNodes = root.children.filter(
               (c) => c.type === "FRAME" || c.type === "COMPONENT" || c.type === "INSTANCE"
             );
-            if (sourceFrames.length === 0) {
+            if (sourceNodes.length === 0) {
               return send({ type: "GENERATION_ERROR", message: "No frames/components found in the selection." });
             }
-            const srcMinX = Math.min(...sourceFrames.map((f) => f.x));
-            const srcMinY = Math.min(...sourceFrames.map((f) => f.y));
-            const srcMaxX = Math.max(...sourceFrames.map((f) => f.x + f.width));
-            const srcMaxY = Math.max(...sourceFrames.map((f) => f.y + f.height));
+            const srcMinX = Math.min(...sourceNodes.map((f) => f.x));
+            const srcMinY = Math.min(...sourceNodes.map((f) => f.y));
+            const srcMaxX = Math.max(...sourceNodes.map((f) => f.x + f.width));
+            const srcMaxY = Math.max(...sourceNodes.map((f) => f.y + f.height));
             const setWidth = srcMaxX - srcMinX;
             const setHeight = srcMaxY - srcMinY;
             const page = figma.currentPage;
@@ -2602,9 +2625,10 @@ FRAME ROWS (${rows.length}):`);
             const ROW_GAP = 400;
             const startY = lowestY + OUTPUT_GAP;
             const startX = srcMinX;
-            const total = targetCodes.length * sourceFrames.length;
+            const total = targetCodes.length * sourceNodes.length;
             let done = 0;
             let built = 0;
+            let totalHits = 0;
             step = "generate language sections";
             let rowIndex = 0;
             for (const code of targetCodes) {
@@ -2619,24 +2643,30 @@ FRAME ROWS (${rows.length}):`);
                 section.resizeWithoutConstraints(setWidth + 200, setHeight + 200);
               } catch (e) {
               }
-              for (const src of sourceFrames) {
-                const clone = src.clone();
-                section.appendChild(clone);
-                clone.x = src.x - srcMinX + 100;
-                clone.y = src.y - srcMinY + 100;
-                clone.name = src.name.replace(/^[A-Z]{2}\//, `${code}/`);
-                yield translateFrame(clone, code);
+              for (const src of sourceNodes) {
+                let copy;
+                if (src.type === "COMPONENT") {
+                  copy = src.createInstance();
+                } else {
+                  copy = src.clone();
+                }
+                section.appendChild(copy);
+                copy.x = src.x - srcMinX + 100;
+                copy.y = src.y - srcMinY + 100;
+                copy.name = src.name.replace(/^[A-Z]{2,3}\//, `${code}/`);
+                const hits = yield translateContainer(copy, code);
+                totalHits += hits;
                 built++;
                 done++;
-                if (done % 3 === 0 || done === total) {
-                  send({ type: "GENERATION_PROGRESS", current: done, total, label: `${lang} \u2014 ${clone.name.slice(0, 22)}` });
+                if (done % 2 === 0 || done === total) {
+                  send({ type: "GENERATION_PROGRESS", current: done, total, label: `${lang} \u2014 ${hits} texts` });
                 }
               }
               rowIndex++;
             }
             step = "finalize";
             figma.viewport.scrollAndZoomIntoView(page.children.slice(-targetCodes.length));
-            send({ type: "GENERATION_COMPLETE", frameCount: built, pageName: page.name });
+            send({ type: "GENERATION_COMPLETE", frameCount: built, pageName: `${page.name} \u2014 ${totalHits} texts translated` });
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             send({ type: "GENERATION_ERROR", message: `Failed at step [${step}]: ${message}` });
