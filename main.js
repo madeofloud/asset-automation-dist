@@ -2646,7 +2646,11 @@ FRAME ROWS (${rows.length}):`);
               for (const src of sourceNodes) {
                 let copy;
                 if (src.type === "COMPONENT") {
-                  copy = src.createInstance();
+                  const inst = src.createInstance();
+                  copy = inst.detachInstance();
+                } else if (src.type === "INSTANCE") {
+                  const inst = src.clone();
+                  copy = inst.detachInstance();
                 } else {
                   copy = src.clone();
                 }
