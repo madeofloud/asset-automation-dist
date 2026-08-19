@@ -249,7 +249,9 @@
             case "INSPECT_PDP":
               return yield handleInspectPdp();
             case "MANUAL_TRANSLATE":
-              return yield handleManualTranslate(msg.extracted);
+              return yield handleManualTranslate(msg.extracted, msg.labelMap);
+            case "MANUAL_READ_LABELS":
+              return yield handleManualReadLabels();
             case "EXPORT_ALL":
               return yield handleExportAll(msg.campaignName);
             case "EXPORT_GIF_ROWS":
@@ -2506,14 +2508,21 @@ FRAME ROWS (${rows.length}):`);
           }
         });
       }
-      function handleManualTranslate(extracted) {
+      function handleManualTranslate(extracted, labelMap) {
         return __async(this, null, function* () {
           var _a, _b, _c;
           let step = "init";
           try {
             let lookupTranslation2 = function(englishText, code) {
-              var _a2;
+              var _a2, _b2;
               const n = norm(englishText);
+              if (labelMap) {
+                const mappedLabel = (_a2 = labelMap[englishText]) != null ? _a2 : labelMap[englishText.trim()];
+                if (mappedLabel && extracted[mappedLabel]) {
+                  const v = extracted[mappedLabel][code];
+                  if (v && v.trim()) return v;
+                }
+              }
               let entry = byEnglish[n];
               if (!entry) {
                 const clean = (s) => s.replace(/[^a-z0-9]/g, "");
@@ -2526,7 +2535,7 @@ FRAME ROWS (${rows.length}):`);
                 if (k) entry = byEnglish[k];
               }
               if (!entry) return null;
-              return (_a2 = entry[code]) != null ? _a2 : null;
+              return (_b2 = entry[code]) != null ? _b2 : null;
             };
             var lookupTranslation = lookupTranslation2;
             if (!extracted || Object.keys(extracted).length === 0) {
@@ -2674,6 +2683,33 @@ FRAME ROWS (${rows.length}):`);
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             send({ type: "GENERATION_ERROR", message: `Failed at step [${step}]: ${message}` });
+          }
+        });
+      }
+      function handleManualReadLabels() {
+        return __async(this, null, function* () {
+          try {
+            const selection = figma.currentPage.selection;
+            if (selection.length === 0) {
+              return send({ type: "MANUAL_LABELS", labels: [], error: "Select the section with your English hotspot components." });
+            }
+            const root = selection[0];
+            if (!("findAll" in root)) {
+              return send({ type: "MANUAL_LABELS", labels: [], error: "Selection has no text layers." });
+            }
+            const texts = root.findAll((n) => n.type === "TEXT");
+            const seen = /* @__PURE__ */ new Set();
+            const labels = [];
+            for (const t of texts) {
+              const s = t.characters.trim();
+              if (s && !seen.has(s)) {
+                seen.add(s);
+                labels.push(s);
+              }
+            }
+            send({ type: "MANUAL_LABELS", labels });
+          } catch (err) {
+            send({ type: "MANUAL_LABELS", labels: [], error: err instanceof Error ? err.message : String(err) });
           }
         });
       }
