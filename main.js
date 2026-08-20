@@ -2592,11 +2592,22 @@ FRAME ROWS (${rows.length}):`);
                 }
               });
             }
+            let diagnosticSent = false;
             function translateContainer(container, code) {
               return __async(this, null, function* () {
                 if (!("findAll" in container)) return 0;
                 let hits = 0;
                 const texts = container.findAll((n) => n.type === "TEXT");
+                if (!diagnosticSent) {
+                  diagnosticSent = true;
+                  const layerTexts = texts.map((t) => t.characters.trim()).filter(Boolean);
+                  send({
+                    type: "MANUAL_DIAG",
+                    layerTexts,
+                    extractedKeys: Object.keys(extracted),
+                    extractedEnglish: Object.values(extracted).map((v) => v["EN"] || "")
+                  });
+                }
                 for (const t of texts) {
                   const english = t.characters;
                   if (!english.trim()) continue;
