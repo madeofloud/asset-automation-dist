@@ -2592,6 +2592,7 @@ FRAME ROWS (${rows.length}):`);
                 }
               });
             }
+            let diagSent = false;
             function translateContainer(container, code) {
               return __async(this, null, function* () {
                 if (!("findAll" in container)) return 0;
@@ -2605,6 +2606,20 @@ FRAME ROWS (${rows.length}):`);
                 );
                 const scope = regular != null ? regular : container;
                 const texts = scope.findAll((n) => n.type === "TEXT");
+                if (!diagSent && container.name.includes("side-view")) {
+                  diagSent = true;
+                  const report = texts.map((t) => {
+                    const en = t.characters.trim();
+                    const tr = en ? lookupTranslation2(en, code) : null;
+                    return `${tr ? "\u2713" : "\u2717"} "${en}"${tr ? " \u2192 " + tr : ""}`;
+                  });
+                  send({
+                    type: "MANUAL_DIAG",
+                    layerTexts: report,
+                    extractedKeys: [],
+                    extractedEnglish: Object.values(extracted).map((v) => v["EN"] || "").filter(Boolean)
+                  });
+                }
                 for (const t of texts) {
                   const english = t.characters;
                   if (!english.trim()) continue;
