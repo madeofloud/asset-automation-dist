@@ -2125,10 +2125,13 @@ FRAME ROWS (${rows.length}):`);
           }
           rowGroups.push(currentRow);
           function deriveLabel(rowFrames, idx) {
-            const parts = rowFrames[0].name.split("_");
+            const rawName = rowFrames[0].name;
+            const parts = rawName.split("_");
             const suffix = parts[parts.length - 1];
             if (/^[A-Z]{2,4}$/.test(suffix)) return suffix;
-            return `row-${idx + 1}`;
+            const cleaned = rawName.replace(/^Image[-_]?/i, "").replace(/[-_]+/g, " ").replace(/\s+\d+x\d+\s*$/i, "").trim();
+            if (cleaned.length >= 2) return cleaned;
+            return `Row ${idx + 1}`;
           }
           const rowMeta = rowGroups.map((rowFrames, idx) => ({
             label: deriveLabel(rowFrames, idx),
