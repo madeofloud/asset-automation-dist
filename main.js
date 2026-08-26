@@ -2513,7 +2513,12 @@ FRAME ROWS (${rows.length}):`);
           var _a, _b, _c;
           let step = "init";
           try {
-            let lookupTranslation2 = function(englishText, code) {
+            let lookupById2 = function(id, code) {
+              const row = byId[id.toLowerCase()];
+              if (!row) return null;
+              const v = row[code];
+              return v && v.trim() ? v : null;
+            }, lookupTranslation2 = function(englishText, code) {
               var _a2, _b2;
               const n = norm(englishText);
               if (labelMap) {
@@ -2537,7 +2542,7 @@ FRAME ROWS (${rows.length}):`);
               if (!entry) return null;
               return (_b2 = entry[code]) != null ? _b2 : null;
             };
-            var lookupTranslation = lookupTranslation2;
+            var lookupById = lookupById2, lookupTranslation = lookupTranslation2;
             if (!extracted || Object.keys(extracted).length === 0) {
               return send({ type: "GENERATION_ERROR", message: "No extracted manual data. Run extraction first." });
             }
@@ -2580,6 +2585,11 @@ FRAME ROWS (${rows.length}):`);
               byEnglish[norm(label)] = byLang;
             }
             const englishKeys = Object.keys(byEnglish);
+            const byId = {};
+            for (const row of Object.values(extracted)) {
+              const id = row["__id__"];
+              if (id) byId[String(id).toLowerCase()] = row;
+            }
             function setText(node, value) {
               return __async(this, null, function* () {
                 try {
@@ -2605,10 +2615,23 @@ FRAME ROWS (${rows.length}):`);
                 );
                 const scope = regular != null ? regular : container;
                 const texts = scope.findAll((n) => n.type === "TEXT");
+                const idForText = (t) => {
+                  let cur = t;
+                  for (let depth = 0; depth < 6 && cur; depth++) {
+                    const name = cur.name;
+                    if (name && /^(dl|cp|ip|dl2|[a-z]{1,3})-\d{1,2}$/i.test(name.trim())) {
+                      return name.trim().toLowerCase();
+                    }
+                    cur = cur.parent;
+                  }
+                  return null;
+                };
                 for (const t of texts) {
                   const english = t.characters;
                   if (!english.trim()) continue;
-                  const translated = lookupTranslation2(english, code);
+                  const id = idForText(t);
+                  let translated = id ? lookupById2(id, code) : null;
+                  if (!translated) translated = lookupTranslation2(english, code);
                   if (translated && translated.trim() && translated.trim() !== english.trim()) {
                     yield setText(t, translated);
                     hits++;
