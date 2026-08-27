@@ -2771,18 +2771,19 @@ FRAME ROWS (${rows.length}):`);
               return __async(this, null, function* () {
                 const nx = offsetX + ("x" in node ? node.x : 0);
                 const ny = offsetY + ("y" in node ? node.y : 0);
+                const blendMode = node.blendMode || "NORMAL";
                 const fills = node.fills;
                 if (Array.isArray(fills)) {
                   const videoFill = fills.find((f) => f.type === "VIDEO");
                   const imageFill = fills.find((f) => f.type === "IMAGE");
                   if (videoFill) {
-                    found.push({ node, kind: "video-missing", absX: nx, absY: ny });
+                    found.push({ node, kind: "video-missing", absX: nx, absY: ny, blendMode });
                   } else if (imageFill && imageFill.imageHash) {
                     const image = figma.getImageByHash(imageFill.imageHash);
                     if (image) {
                       const bytes = yield image.getBytesAsync();
                       const isGif = bytes.length >= 3 && bytes[0] === 71 && bytes[1] === 73 && bytes[2] === 70;
-                      if (isGif) found.push({ node, kind: "gif", absX: nx, absY: ny });
+                      if (isGif) found.push({ node, kind: "gif", absX: nx, absY: ny, blendMode });
                     }
                   }
                 }
@@ -2802,7 +2803,8 @@ FRAME ROWS (${rows.length}):`);
                 x: f.absX,
                 y: f.absY,
                 width: f.node.width,
-                height: f.node.height
+                height: f.node.height,
+                blendMode: f.blendMode
               };
               if (f.kind === "video-missing") {
                 items.push(__spreadProps(__spreadValues({}, common), { kind: "video-missing" }));
