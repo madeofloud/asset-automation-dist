@@ -2754,55 +2754,92 @@ FRAME ROWS (${rows.length}):`);
       }
       function handleVideoScanSelection() {
         return __async(this, null, function* () {
+          const hiddenNodes = [];
           try {
             const selection = figma.currentPage.selection;
             if (selection.length === 0) {
               return send({ type: "VIDEO_SCAN_RESULT", items: [], error: "Select a frame or section containing your assets." });
             }
             const root = selection[0];
-            if (!("children" in root)) {
-              return send({ type: "VIDEO_SCAN_RESULT", items: [], error: "Selection has no child layers." });
+            if (!("x" in root) || !("width" in root)) {
+              return send({ type: "VIDEO_SCAN_RESULT", items: [], error: "Selection must be a frame, section or group." });
             }
-            const children = root.children;
-            const items = [];
-            for (const node of children) {
-              if (!("x" in node) || !("width" in node)) continue;
-              const common = {
-                id: node.id,
-                name: node.name,
-                x: node.x,
-                y: node.y,
-                width: node.width,
-                height: node.height
-              };
-              const fills = node.fills;
-              if (!Array.isArray(fills)) {
-                items.push(__spreadProps(__spreadValues({}, common), { kind: "unknown" }));
-                continue;
-              }
-              const videoFill = fills.find((f) => f.type === "VIDEO");
-              const imageFill = fills.find((f) => f.type === "IMAGE");
-              if (videoFill) {
-                items.push(__spreadProps(__spreadValues({}, common), { kind: "video-missing" }));
-              } else if (imageFill && imageFill.imageHash) {
-                const image = figma.getImageByHash(imageFill.imageHash);
-                if (image) {
-                  const bytes = yield image.getBytesAsync();
-                  const isGif = bytes.length >= 3 && bytes[0] === 71 && bytes[1] === 73 && bytes[2] === 70;
-                  items.push(__spreadProps(__spreadValues({}, common), {
-                    kind: isGif ? "gif" : "image",
-                    bytes: Array.from(bytes)
-                  }));
-                } else {
-                  items.push(__spreadProps(__spreadValues({}, common), { kind: "unknown" }));
+            const rootX = root.x;
+            const rootY = root.y;
+            const found = [];
+            function walk(node, offsetX, offsetY) {
+              return __async(this, null, function* () {
+                const nx = offsetX + ("x" in node ? node.x : 0);
+                const ny = offsetY + ("y" in node ? node.y : 0);
+                const fills = node.fills;
+                if (Array.isArray(fills)) {
+                  const videoFill = fills.find((f) => f.type === "VIDEO");
+                  const imageFill = fills.find((f) => f.type === "IMAGE");
+                  if (videoFill) {
+                    found.push({ node, kind: "video-missing", absX: nx, absY: ny });
+                  } else if (imageFill && imageFill.imageHash) {
+                    const image = figma.getImageByHash(imageFill.imageHash);
+                    if (image) {
+                      const bytes = yield image.getBytesAsync();
+                      const isGif = bytes.length >= 3 && bytes[0] === 71 && bytes[1] === 73 && bytes[2] === 70;
+                      if (isGif) found.push({ node, kind: "gif", absX: nx, absY: ny });
+                    }
+                  }
                 }
+                if ("children" in node) {
+                  for (const child of node.children) {
+                    yield walk(child, nx, ny);
+                  }
+                }
+              });
+            }
+            yield walk(root, -rootX, -rootY);
+            const items = [];
+            for (const f of found) {
+              const common = {
+                id: f.node.id,
+                name: f.node.name,
+                x: f.absX,
+                y: f.absY,
+                width: f.node.width,
+                height: f.node.height
+              };
+              if (f.kind === "video-missing") {
+                items.push(__spreadProps(__spreadValues({}, common), { kind: "video-missing" }));
               } else {
-                items.push(__spreadProps(__spreadValues({}, common), { kind: "unknown" }));
+                const fills = f.node.fills;
+                const imageFill = fills.find((p) => p.type === "IMAGE");
+                const image = figma.getImageByHash(imageFill.imageHash);
+                const bytes = image ? yield image.getBytesAsync() : new Uint8Array();
+                items.push(__spreadProps(__spreadValues({}, common), { kind: "gif", bytes: Array.from(bytes) }));
               }
             }
+            for (const f of found) {
+              if ("visible" in f.node) {
+                hiddenNodes.push(f.node);
+                f.node.visible = false;
+              }
+            }
+            const bgBytes = yield root.exportAsync({ format: "PNG", constraint: { type: "SCALE", value: 1 } });
+            for (const n of hiddenNodes) {
+              n.visible = true;
+            }
+            hiddenNodes.length = 0;
             const canvasSize = { width: root.width, height: root.height };
-            send({ type: "VIDEO_SCAN_RESULT", items, canvasSize, sectionName: root.name });
+            send({
+              type: "VIDEO_SCAN_RESULT",
+              items,
+              background: Array.from(bgBytes),
+              canvasSize,
+              sectionName: root.name
+            });
           } catch (err) {
+            for (const n of hiddenNodes) {
+              try {
+                n.visible = true;
+              } catch (e) {
+              }
+            }
             send({ type: "VIDEO_SCAN_RESULT", items: [], error: err instanceof Error ? err.message : String(err) });
           }
         });
