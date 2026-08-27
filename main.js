@@ -1,6 +1,8 @@
 "use strict";
 (() => {
   var __defProp = Object.defineProperty;
+  var __defProps = Object.defineProperties;
+  var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __getOwnPropSymbols = Object.getOwnPropertySymbols;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
@@ -17,6 +19,7 @@
       }
     return a;
   };
+  var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
   var __esm = (fn, res) => function __init() {
     return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
   };
@@ -252,6 +255,8 @@
               return yield handleManualTranslate(msg.extracted, msg.labelMap);
             case "MANUAL_READ_LABELS":
               return yield handleManualReadLabels();
+            case "VIDEO_SCAN_SELECTION":
+              return yield handleVideoScanSelection();
             case "EXPORT_ALL":
               return yield handleExportAll(msg.campaignName);
             case "EXPORT_GIF_ROWS":
@@ -2744,6 +2749,61 @@ FRAME ROWS (${rows.length}):`);
             send({ type: "MANUAL_LABELS", labels });
           } catch (err) {
             send({ type: "MANUAL_LABELS", labels: [], error: err instanceof Error ? err.message : String(err) });
+          }
+        });
+      }
+      function handleVideoScanSelection() {
+        return __async(this, null, function* () {
+          try {
+            const selection = figma.currentPage.selection;
+            if (selection.length === 0) {
+              return send({ type: "VIDEO_SCAN_RESULT", items: [], error: "Select a frame or section containing your assets." });
+            }
+            const root = selection[0];
+            if (!("children" in root)) {
+              return send({ type: "VIDEO_SCAN_RESULT", items: [], error: "Selection has no child layers." });
+            }
+            const children = root.children;
+            const items = [];
+            for (const node of children) {
+              if (!("x" in node) || !("width" in node)) continue;
+              const common = {
+                id: node.id,
+                name: node.name,
+                x: node.x,
+                y: node.y,
+                width: node.width,
+                height: node.height
+              };
+              const fills = node.fills;
+              if (!Array.isArray(fills)) {
+                items.push(__spreadProps(__spreadValues({}, common), { kind: "unknown" }));
+                continue;
+              }
+              const videoFill = fills.find((f) => f.type === "VIDEO");
+              const imageFill = fills.find((f) => f.type === "IMAGE");
+              if (videoFill) {
+                items.push(__spreadProps(__spreadValues({}, common), { kind: "video-missing" }));
+              } else if (imageFill && imageFill.imageHash) {
+                const image = figma.getImageByHash(imageFill.imageHash);
+                if (image) {
+                  const bytes = yield image.getBytesAsync();
+                  const isGif = bytes.length >= 3 && bytes[0] === 71 && bytes[1] === 73 && bytes[2] === 70;
+                  items.push(__spreadProps(__spreadValues({}, common), {
+                    kind: isGif ? "gif" : "image",
+                    bytes: Array.from(bytes)
+                  }));
+                } else {
+                  items.push(__spreadProps(__spreadValues({}, common), { kind: "unknown" }));
+                }
+              } else {
+                items.push(__spreadProps(__spreadValues({}, common), { kind: "unknown" }));
+              }
+            }
+            const canvasSize = { width: root.width, height: root.height };
+            send({ type: "VIDEO_SCAN_RESULT", items, canvasSize, sectionName: root.name });
+          } catch (err) {
+            send({ type: "VIDEO_SCAN_RESULT", items: [], error: err instanceof Error ? err.message : String(err) });
           }
         });
       }
