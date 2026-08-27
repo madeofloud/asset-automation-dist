@@ -11,8 +11,9 @@
       "https://raw.githubusercontent.com",
       "https://api.anthropic.com",
       "https://asset-automation-convert.vercel.app",
-      "https://*.public.blob.vercel-storage.com"
+      "https://*.public.blob.vercel-storage.com",
+      "https://vercel.com"
     ],
-    "reasoning": "Check for plugin updates (version.json), AI copy/image adaptation, WebM→MP4 video conversion, and direct video upload to Vercel Blob storage for the Video Downloader tool (bypasses the 4.5MB serverless request-body cap)."
+    "reasoning": "Check for plugin updates (version.json), AI copy/image adaptation, WebM→MP4 video conversion, and direct video upload to Vercel Blob storage for the Video Downloader tool (the @vercel/blob client SDK routes uploads through vercel.com/api/blob before reaching the storage domain, bypassing the 4.5MB serverless request-body cap)."
   }
 }
