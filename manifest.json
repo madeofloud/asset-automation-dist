@@ -10,8 +10,9 @@
     "allowedDomains": [
       "https://raw.githubusercontent.com",
       "https://api.anthropic.com",
-      "https://asset-automation-convert.vercel.app"
+      "https://asset-automation-convert.vercel.app",
+      "https://*.public.blob.vercel-storage.com"
     ],
-    "reasoning": "Check for plugin updates (version.json), AI copy/image adaptation, and WebM→MP4 video conversion."
+    "reasoning": "Check for plugin updates (version.json), AI copy/image adaptation, WebM→MP4 video conversion, and direct video upload to Vercel Blob storage for the Video Downloader tool (bypasses the 4.5MB serverless request-body cap)."
   }
 }
