@@ -2094,6 +2094,31 @@ FRAME ROWS (${rows.length}):`);
         });
       }
       var GIF_ROW_THRESHOLD = 50;
+      function findEmbeddedGifBytes(node) {
+        return __async(this, null, function* () {
+          const fills = node.fills;
+          if (Array.isArray(fills)) {
+            for (const f of fills) {
+              if (f.type === "IMAGE" && f.imageHash) {
+                const img = figma.getImageByHash(f.imageHash);
+                if (img) {
+                  const bytes = yield img.getBytesAsync();
+                  if (bytes.length >= 6 && bytes[0] === 71 && bytes[1] === 73 && bytes[2] === 70) {
+                    return bytes;
+                  }
+                }
+              }
+            }
+          }
+          if ("children" in node) {
+            for (const child of node.children) {
+              const found = yield findEmbeddedGifBytes(child);
+              if (found) return found;
+            }
+          }
+          return null;
+        });
+      }
       function handleExportGifRows() {
         return __async(this, null, function* () {
           const selection = figma.currentPage.selection;
@@ -2149,8 +2174,13 @@ FRAME ROWS (${rows.length}):`);
             const exportedFrames = [];
             for (const f of rowFrames) {
               const frameNode = figma.getNodeById(f.id);
-              const bytes = yield frameNode.exportAsync({ format: "PNG", constraint: { type: "SCALE", value: 1 } });
-              exportedFrames.push({ name: f.name, width: f.width, height: f.height, bytes: Array.from(bytes) });
+              const gifBytes = yield findEmbeddedGifBytes(frameNode);
+              if (gifBytes) {
+                exportedFrames.push({ name: f.name, width: f.width, height: f.height, kind: "gif", gifBytes: Array.from(gifBytes) });
+              } else {
+                const bytes = yield frameNode.exportAsync({ format: "PNG", constraint: { type: "SCALE", value: 1 } });
+                exportedFrames.push({ name: f.name, width: f.width, height: f.height, kind: "static", bytes: Array.from(bytes) });
+              }
             }
             send({ type: "GIF_ROW_DATA", rowIndex: i, label, frames: exportedFrames });
           }
