@@ -2098,11 +2098,11 @@ FRAME ROWS (${rows.length}):`);
         return __async(this, null, function* () {
           const selection = figma.currentPage.selection;
           if (selection.length === 0) {
-            return send({ type: "GIF_ERROR", message: "Select a section in Figma first." });
+            return send({ type: "GIF_ERROR", message: "Select a frame, group or section in Figma first." });
           }
           const node = selection[0];
           if (node.type !== "SECTION" && node.type !== "FRAME" && node.type !== "GROUP") {
-            return send({ type: "GIF_ERROR", message: "Select a section, frame or group." });
+            return send({ type: "GIF_ERROR", message: "Select a frame, group or section." });
           }
           const container = node;
           const SKIP_NAMES = /COPY\s*BRIEF|DESIGN\s*BRIEF|BRIEF|PHASE|INFO/i;
@@ -2469,7 +2469,7 @@ FRAME ROWS (${rows.length}):`);
             var collect = collect2;
             const selection = figma.currentPage.selection;
             if (selection.length === 0) {
-              return send({ type: "GIF_TRANSLATE_ERROR", message: "Select one or more sections (or frames) containing GIF frames." });
+              return send({ type: "GIF_TRANSLATE_ERROR", message: "Select one or more frames, groups or sections containing GIF frames." });
             }
             send({ type: "GIF_TRANSLATE_STATUS", text: `Scanning ${selection.length} selected item(s)\u2026` });
             const items = [];
@@ -2758,7 +2758,7 @@ FRAME ROWS (${rows.length}):`);
           try {
             const selection = figma.currentPage.selection;
             if (selection.length === 0) {
-              return send({ type: "VIDEO_SCAN_RESULT", items: [], error: "Select a frame or section containing your assets." });
+              return send({ type: "VIDEO_SCAN_RESULT", items: [], error: "Select a frame, group or section containing your assets." });
             }
             const root = selection[0];
             if (!("x" in root) || !("width" in root)) {
