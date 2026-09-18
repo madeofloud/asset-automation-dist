@@ -1572,6 +1572,111 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
           return false;
         });
       }
+      var VT_STRETCH_MIN_SCALE = 0.6;
+      function vtStretchBounds(frame) {
+        const W = frame.width;
+        const sane = (l, r) => l >= 0 && r > l && r <= W && r - l >= W * 0.3 && r - l < W;
+        try {
+          const xs = (frame.guides || []).filter((g) => g.axis === "X").map((g) => g.offset).sort((a, b) => a - b);
+          if (xs.length >= 2) {
+            const left = xs[0], right = xs[xs.length - 1];
+            if (sane(left, right)) return { left, right };
+          }
+        } catch (e) {
+        }
+        try {
+          for (const g of frame.layoutGrids || []) {
+            if (g.pattern !== "COLUMNS") continue;
+            const offset = typeof g.offset === "number" ? g.offset : 0;
+            if (g.alignment === "STRETCH" && offset > 0) {
+              if (sane(offset, W - offset)) return { left: offset, right: W - offset };
+            }
+            if (g.alignment === "CENTER" && typeof g.sectionSize === "number" && typeof g.count === "number") {
+              const gutter = typeof g.gutterSize === "number" ? g.gutterSize : 0;
+              const total = g.sectionSize * g.count + gutter * Math.max(0, g.count - 1);
+              const left = (W - total) / 2;
+              if (sane(left, W - left)) return { left, right: W - left };
+            }
+          }
+        } catch (e) {
+        }
+        return null;
+      }
+      function vtLoadNodeFonts(node) {
+        return __async(this, null, function* () {
+          const fonts = [];
+          const seen = /* @__PURE__ */ new Set();
+          const add = (fn) => {
+            if (fn === figma.mixed) return;
+            const key = JSON.stringify(fn);
+            if (!seen.has(key)) {
+              seen.add(key);
+              fonts.push(fn);
+            }
+          };
+          add(node.fontName);
+          for (let i = 0; i < node.characters.length; i++) add(node.getRangeFontName(i, i + 1));
+          for (const fn of fonts) {
+            try {
+              yield figma.loadFontAsync(fn);
+            } catch (e) {
+            }
+          }
+        });
+      }
+      function vtSetFontSize(t, size) {
+        try {
+          if (t.fontSize !== figma.mixed) t.fontSize = size;
+          else t.setRangeFontSize(0, t.characters.length, size);
+        } catch (e) {
+        }
+      }
+      function vtNaturalWidth(t) {
+        const mode = t.textAutoResize;
+        const w0 = t.width, h0 = t.height;
+        try {
+          t.textAutoResize = "WIDTH_AND_HEIGHT";
+          return t.width;
+        } catch (e) {
+          return w0;
+        } finally {
+          try {
+            t.textAutoResize = mode;
+            if (mode === "NONE") t.resize(w0, h0);
+            else if (mode === "HEIGHT") t.resize(w0, t.height);
+          } catch (e) {
+          }
+        }
+      }
+      function vtStretchToWidth(t, targetW) {
+        const orig = typeof t.fontSize === "number" ? t.fontSize : 0;
+        if (!orig || targetW <= 0) return { size: orig, wrapped: false };
+        try {
+          t.textAutoResize = "WIDTH_AND_HEIGHT";
+        } catch (e) {
+        }
+        let size = orig;
+        for (let i = 0; i < 5; i++) {
+          const natural = t.width;
+          if (natural <= 0) break;
+          const next = Math.round(size * (targetW / natural) * 10) / 10;
+          if (next === size) break;
+          size = next;
+          vtSetFontSize(t, size);
+          if (Math.abs(t.width - targetW) <= 1) break;
+        }
+        const floor = Math.round(orig * VT_STRETCH_MIN_SCALE * 10) / 10;
+        if (size < floor) {
+          vtSetFontSize(t, floor);
+          try {
+            t.textAutoResize = "HEIGHT";
+            t.resize(targetW, t.height);
+          } catch (e) {
+          }
+          return { size: floor, wrapped: true };
+        }
+        return { size, wrapped: false };
+      }
       function cloneVtFrameFromTemplate(templatePage, outputPage, typeKey, langCode, mainText, subText, w, h, x, y) {
         return __async(this, null, function* () {
           var _a, _b;
@@ -1582,12 +1687,27 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
           outputPage.appendChild(clone);
           clone.x = x;
           clone.y = y;
+          const is916 = h > w;
+          const stretches = is916 && (typeKey === "logo" || typeKey === "lockup");
+          const bounds = stretches ? vtStretchBounds(clone) : null;
           const MARGIN_RATIO = 0.1;
           const maxTextW = Math.round(w * (1 - MARGIN_RATIO * 2));
+          const parentOffsetX = (t) => {
+            let dx = 0;
+            let p = t.parent;
+            while (p && p !== clone && "x" in p) {
+              dx += p.x;
+              p = p.parent;
+            }
+            return dx;
+          };
+          const parentWidth = (t) => {
+            const p = t.parent;
+            return p && "width" in p ? p.width : w;
+          };
           const wrapAndCenter = (t) => {
             try {
-              const parent = t.parent;
-              const parentW = parent && "width" in parent ? parent.width : w;
+              const parentW = parentWidth(t);
               const wrapW = Math.min(maxTextW, Math.round(parentW * (1 - MARGIN_RATIO * 2)));
               const cy = t.y + t.height / 2;
               t.textAlignHorizontal = "CENTER";
@@ -1598,31 +1718,77 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
             } catch (e) {
             }
           };
+          const placeInBounds = (t, targetW) => {
+            const left = bounds ? bounds.left - parentOffsetX(t) : Math.round((parentWidth(t) - targetW) / 2);
+            t.x = Math.round(left + (targetW - t.width) / 2);
+          };
+          const unclipParent = (t) => {
+            const p = t.parent;
+            if (p && p !== clone && p.type === "FRAME") p.clipsContent = false;
+          };
+          const stretchTargetFor = (t) => __async(this, null, function* () {
+            if (bounds) return bounds.right - bounds.left;
+            yield vtLoadNodeFonts(t);
+            return vtNaturalWidth(t);
+          });
           const texts = collectTextNodes(clone);
           if (typeKey === "lockup") {
-            const header = (_a = texts.find((t) => /productname/i.test(t.name))) != null ? _a : texts[0];
-            const sub = (_b = texts.find((t) => t !== header && /sub|header/i.test(t.name))) != null ? _b : texts.find((t) => t !== header);
+            const header = (_a = texts.find((t) => /product\s*name/i.test(t.name))) != null ? _a : texts[0];
+            const sub = (_b = texts.find((t) => t !== header && /sub/i.test(t.name))) != null ? _b : texts.find((t) => t !== header);
+            const headerBottom0 = header ? header.y + header.height : 0;
+            const gap0 = header && sub ? sub.y - headerBottom0 : 0;
+            let headerSize = 0;
+            let targetW = 0;
             if (header) {
+              if (stretches) targetW = yield stretchTargetFor(header);
               yield setVtText(header, mainText);
-              wrapAndCenter(header);
+              if (stretches && targetW > 0) {
+                header.textAlignHorizontal = "CENTER";
+                const fit = vtStretchToWidth(header, targetW);
+                headerSize = fit.size;
+                placeInBounds(header, targetW);
+                if (fit.wrapped) unclipParent(header);
+              } else {
+                wrapAndCenter(header);
+              }
             }
             if (sub) {
-              if (subText) {
+              if (!subText) sub.remove();
+              else {
                 yield setVtText(sub, subText);
-                wrapAndCenter(sub);
-              } else sub.remove();
+                if (stretches && headerSize > 0 && targetW > 0) {
+                  vtSetFontSize(sub, Math.round(headerSize * 0.5 * 10) / 10);
+                  sub.textAlignHorizontal = "CENTER";
+                  try {
+                    sub.textAutoResize = "HEIGHT";
+                    sub.resize(targetW, sub.height);
+                  } catch (e) {
+                  }
+                  placeInBounds(sub, targetW);
+                } else {
+                  wrapAndCenter(sub);
+                }
+              }
             }
-            if (header && sub && subText) {
-              const gap = Math.round(h * 0.02);
-              const totalH = header.height + gap + sub.height;
-              const top = Math.round((h - totalH) / 2);
-              header.y = top;
-              sub.y = top + header.height + gap;
+            if (header) {
+              header.y = Math.round(headerBottom0 - header.height);
+              if (sub && subText) sub.y = Math.round(headerBottom0 + gap0);
             }
           } else {
-            if (texts[0]) {
-              yield setVtText(texts[0], mainText);
-              wrapAndCenter(texts[0]);
+            const t = texts[0];
+            if (t) {
+              const bottom0 = t.y + t.height;
+              const targetW = stretches ? yield stretchTargetFor(t) : 0;
+              yield setVtText(t, mainText);
+              if (stretches && targetW > 0) {
+                t.textAlignHorizontal = "CENTER";
+                const fit = vtStretchToWidth(t, targetW);
+                placeInBounds(t, targetW);
+                t.y = Math.round(bottom0 - t.height);
+                if (fit.wrapped) unclipParent(t);
+              } else {
+                wrapAndCenter(t);
+              }
             }
           }
           return clone;
