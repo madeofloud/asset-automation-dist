@@ -1648,6 +1648,12 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
           }
         }
       }
+      function vtUnitWidth(t) {
+        const size = typeof t.fontSize === "number" ? t.fontSize : 0;
+        if (!size) return 0;
+        const natural = vtNaturalWidth(t);
+        return natural > 0 ? natural / size : 0;
+      }
       function vtStretchToWidth(t, targetW) {
         const orig = typeof t.fontSize === "number" ? t.fontSize : 0;
         if (!orig || targetW <= 0) return { size: orig, wrapped: false };
@@ -1737,38 +1743,67 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
             const sub = (_b = texts.find((t) => t !== header && /sub/i.test(t.name))) != null ? _b : texts.find((t) => t !== header);
             const headerBottom0 = header ? header.y + header.height : 0;
             const gap0 = header && sub ? sub.y - headerBottom0 : 0;
-            let headerSize = 0;
             let targetW = 0;
-            if (header) {
-              if (stretches) targetW = yield stretchTargetFor(header);
-              yield setVtText(header, mainText);
-              if (stretches && targetW > 0) {
-                header.textAlignHorizontal = "CENTER";
-                const fit = vtStretchToWidth(header, targetW);
-                headerSize = fit.size;
-                placeInBounds(header, targetW);
-                if (fit.wrapped) unclipParent(header);
-              } else {
-                wrapAndCenter(header);
-              }
-            }
+            const tplHeaderSize = header && typeof header.fontSize === "number" ? header.fontSize : 0;
+            if (header && stretches) targetW = yield stretchTargetFor(header);
+            if (header) yield setVtText(header, mainText);
             if (sub) {
               if (!subText) sub.remove();
-              else {
-                yield setVtText(sub, subText);
-                if (stretches && headerSize > 0 && targetW > 0) {
-                  vtSetFontSize(sub, Math.round(headerSize * 0.5 * 10) / 10);
-                  sub.textAlignHorizontal = "CENTER";
-                  try {
-                    sub.textAutoResize = "HEIGHT";
-                    sub.resize(targetW, sub.height);
-                  } catch (e) {
+              else yield setVtText(sub, subText);
+            }
+            const useSub = !!(sub && subText && sub.parent);
+            if (header && stretches && targetW > 0 && tplHeaderSize > 0) {
+              const floorSize = Math.round(tplHeaderSize * VT_STRETCH_MIN_SCALE * 10) / 10;
+              const apply = (s) => {
+                vtSetFontSize(header, s);
+                if (useSub) vtSetFontSize(sub, Math.round(s * 0.5 * 10) / 10);
+              };
+              const unitWidest = Math.max(vtUnitWidth(header), useSub ? vtUnitWidth(sub) * 0.5 : 0);
+              let size = unitWidest > 0 ? Math.round(targetW / unitWidest * 10) / 10 : tplHeaderSize;
+              let wrapped = size < floorSize;
+              if (wrapped) size = floorSize;
+              apply(size);
+              if (!wrapped) {
+                for (let i = 0; i < 3; i++) {
+                  const widestPx = Math.max(vtNaturalWidth(header), useSub ? vtNaturalWidth(sub) : 0);
+                  if (widestPx <= 0 || Math.abs(widestPx - targetW) <= 1) break;
+                  const next = Math.round(size * (targetW / widestPx) * 10) / 10;
+                  if (next === size) break;
+                  size = next;
+                  if (size < floorSize) {
+                    size = floorSize;
+                    wrapped = true;
                   }
-                  placeInBounds(sub, targetW);
-                } else {
-                  wrapAndCenter(sub);
+                  apply(size);
+                  if (wrapped) break;
                 }
               }
+              const box = header.parent;
+              if (box && box !== clone && box.type === "FRAME") {
+                const f = box;
+                f.clipsContent = false;
+                try {
+                  f.resize(targetW, f.height);
+                } catch (e) {
+                }
+                f.x = Math.round(bounds ? bounds.left : (w - targetW) / 2);
+              }
+              const layout = (t) => {
+                t.textAlignHorizontal = "CENTER";
+                try {
+                  if (wrapped) {
+                    t.textAutoResize = "HEIGHT";
+                    t.resize(targetW, t.height);
+                  } else t.textAutoResize = "WIDTH_AND_HEIGHT";
+                } catch (e) {
+                }
+                placeInBounds(t, targetW);
+              };
+              layout(header);
+              if (useSub) layout(sub);
+            } else {
+              if (header) wrapAndCenter(header);
+              if (useSub) wrapAndCenter(sub);
             }
             if (header) {
               header.y = Math.round(headerBottom0 - header.height);
