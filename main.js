@@ -1692,19 +1692,38 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
         return { size, wrapped: false };
       }
       var VT_FRAME_NAME_RE = /^(LOGO\/PRODUCTNAME LOGO|[A-Z]{2}\/(INTRODUCING|PRODUCTNAME LOCKUP|USP0[1-6])) \d+x\d+$/;
+      function vtIsPlaceholderFrame(frameName, textNames) {
+        if (!/PRODUCTNAME (LOGO|LOCKUP)/.test(frameName)) return true;
+        const named = textNames.some((n) => /^product\s*name$/i.test(n));
+        return /LOCKUP/.test(frameName) ? named && textNames.some((n) => /^subheader/i.test(n)) : named;
+      }
       function vtFingerprintEntries(page) {
-        const entries = [];
+        const byName = /* @__PURE__ */ new Map();
         for (const child of page.children) {
           if (child.type !== "FRAME" || !VT_FRAME_NAME_RE.test(child.name)) continue;
           const parts = [];
+          const textNames = [];
           const walk = (n) => {
-            parts.push(n.type === "TEXT" ? `${n.name}@${Math.round(n.height)}` : n.name);
+            if (n.type === "TEXT") {
+              parts.push(`${n.name}@${Math.round(n.height)}`);
+              textNames.push(n.name);
+            } else parts.push(n.name);
             if ("children" in n) for (const c of n.children) walk(c);
           };
           for (const c of child.children) walk(c);
-          entries.push(`${child.name}|${Math.round(child.width)}x${Math.round(child.height)}|${parts.join(",")}`);
+          const list = byName.get(child.name) || [];
+          list.push({
+            entry: `${child.name}|${Math.round(child.width)}x${Math.round(child.height)}|${parts.join(",")}`,
+            placeholder: vtIsPlaceholderFrame(child.name, textNames)
+          });
+          byName.set(child.name, list);
         }
-        return entries.sort();
+        const out = [];
+        byName.forEach((list) => {
+          var _a;
+          out.push(((_a = list.find((c) => c.placeholder)) != null ? _a : list[0]).entry);
+        });
+        return out.sort();
       }
       function vtFingerprintHash(entries) {
         let h = 2166136261;
