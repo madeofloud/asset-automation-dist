@@ -261,6 +261,8 @@
               return yield handleExportAll(msg.campaignName);
             case "EXPORT_GIF_ROWS":
               return yield handleExportGifRows();
+            case "VT_TEMPLATE_FINGERPRINT":
+              return handleVtTemplateFingerprint();
             case "GIF_TRANSLATE_EXTRACT":
               return yield handleGifTranslateExtract();
             case "GIF_TRANSLATE_BATCH":
@@ -1573,17 +1575,23 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
         });
       }
       var VT_STRETCH_MIN_SCALE = 0.6;
-      function vtStretchBounds(frame) {
-        const W = frame.width;
-        const sane = (l, r) => l >= 0 && r > l && r <= W && r - l >= W * 0.3 && r - l < W;
+      function vtSaneBounds(W, l, r) {
+        return l >= 0 && r > l && r <= W && r - l >= W * 0.3 && r - l < W;
+      }
+      function vtGuideBounds(frame) {
         try {
           const xs = (frame.guides || []).filter((g) => g.axis === "X").map((g) => g.offset).sort((a, b) => a - b);
           if (xs.length >= 2) {
             const left = xs[0], right = xs[xs.length - 1];
-            if (sane(left, right)) return { left, right };
+            if (vtSaneBounds(frame.width, left, right)) return { left, right };
           }
         } catch (e) {
         }
+        return null;
+      }
+      function vtGridBounds(frame) {
+        const W = frame.width;
+        const sane = (l, r) => vtSaneBounds(W, l, r);
         try {
           for (const g of frame.layoutGrids || []) {
             if (g.pattern !== "COLUMNS") continue;
@@ -1683,19 +1691,60 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
         }
         return { size, wrapped: false };
       }
+      var VT_FRAME_NAME_RE = /^(LOGO\/PRODUCTNAME LOGO|[A-Z]{2}\/(INTRODUCING|PRODUCTNAME LOCKUP|USP0[1-6])) \d+x\d+$/;
+      function vtFingerprintEntries(page) {
+        const entries = [];
+        for (const child of page.children) {
+          if (child.type !== "FRAME" || !VT_FRAME_NAME_RE.test(child.name)) continue;
+          const parts = [];
+          const walk = (n) => {
+            parts.push(n.type === "TEXT" ? `${n.name}@${Math.round(n.height)}` : n.name);
+            if ("children" in n) for (const c of n.children) walk(c);
+          };
+          for (const c of child.children) walk(c);
+          entries.push(`${child.name}|${Math.round(child.width)}x${Math.round(child.height)}|${parts.join(",")}`);
+        }
+        return entries.sort();
+      }
+      function vtFingerprintHash(entries) {
+        let h = 2166136261;
+        const s = entries.join(";");
+        for (let i = 0; i < s.length; i++) {
+          h ^= s.charCodeAt(i);
+          h = h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24)) >>> 0;
+        }
+        return ("0000000" + h.toString(16)).slice(-8);
+      }
+      function handleVtTemplateFingerprint() {
+        const page = figma.root.children.find((p) => p.name === "_Templates_Videotitle");
+        if (!page) {
+          return send({ type: "VT_TEMPLATE_FINGERPRINT", found: false, hash: "", entries: [] });
+        }
+        const entries = vtFingerprintEntries(page);
+        send({ type: "VT_TEMPLATE_FINGERPRINT", found: true, hash: vtFingerprintHash(entries), entries });
+      }
       function cloneVtFrameFromTemplate(templatePage, outputPage, typeKey, langCode, mainText, subText, w, h, x, y) {
         return __async(this, null, function* () {
-          var _a, _b;
+          var _a, _b, _c;
           const name = vtTemplateFrameName(typeKey, langCode, w, h);
-          const tpl = templatePage.children.find((c) => c.type === "FRAME" && c.name === name);
-          if (!tpl) return null;
+          const candidates = templatePage.children.filter(
+            (c) => c.type === "FRAME" && c.name === name
+          );
+          if (candidates.length === 0) return null;
+          const isPlaceholder = (f) => {
+            if (typeKey !== "logo" && typeKey !== "lockup") return true;
+            const texts2 = collectTextNodes(f);
+            const named = texts2.some((t) => /^product\s*name$/i.test(t.name));
+            return typeKey === "lockup" ? named && texts2.some((t) => /^subheader/i.test(t.name)) : named;
+          };
+          const tpl = (_a = candidates.find(isPlaceholder)) != null ? _a : candidates[0];
           const clone = tpl.clone();
           outputPage.appendChild(clone);
           clone.x = x;
           clone.y = y;
           const is916 = h > w;
           const stretches = is916 && (typeKey === "logo" || typeKey === "lockup");
-          const bounds = stretches ? vtStretchBounds(clone) : null;
+          let bounds = stretches ? vtGuideBounds(clone) : null;
           const MARGIN_RATIO = 0.1;
           const maxTextW = Math.round(w * (1 - MARGIN_RATIO * 2));
           const parentOffsetX = (t) => {
@@ -1732,20 +1781,28 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
             const p = t.parent;
             if (p && p !== clone && p.type === "FRAME") p.clipsContent = false;
           };
-          const stretchTargetFor = (t) => __async(this, null, function* () {
-            if (bounds) return bounds.right - bounds.left;
-            yield vtLoadNodeFonts(t);
-            return vtNaturalWidth(t);
+          const resolveStretch = (t) => __async(this, null, function* () {
+            if (!bounds) {
+              yield vtLoadNodeFonts(t);
+              const natural = Math.round(vtNaturalWidth(t));
+              if (natural > 0 && natural < w) {
+                const left = Math.round((w - natural) / 2);
+                bounds = { left, right: left + natural };
+              } else {
+                bounds = vtGridBounds(clone);
+              }
+            }
+            return bounds ? bounds.right - bounds.left : 0;
           });
           const texts = collectTextNodes(clone);
           if (typeKey === "lockup") {
-            const header = (_a = texts.find((t) => /product\s*name/i.test(t.name))) != null ? _a : texts[0];
-            const sub = (_b = texts.find((t) => t !== header && /sub/i.test(t.name))) != null ? _b : texts.find((t) => t !== header);
+            const header = (_b = texts.find((t) => /product\s*name/i.test(t.name))) != null ? _b : texts[0];
+            const sub = (_c = texts.find((t) => t !== header && /sub/i.test(t.name))) != null ? _c : texts.find((t) => t !== header);
             const headerBottom0 = header ? header.y + header.height : 0;
             const gap0 = header && sub ? sub.y - headerBottom0 : 0;
             let targetW = 0;
             const tplHeaderSize = header && typeof header.fontSize === "number" ? header.fontSize : 0;
-            if (header && stretches) targetW = yield stretchTargetFor(header);
+            if (header && stretches) targetW = yield resolveStretch(header);
             if (header) yield setVtText(header, mainText);
             if (sub) {
               if (!subText) sub.remove();
@@ -1813,7 +1870,7 @@ https://www.figma.com/design/X1p3bykaygsmL0WH9KKKQH/Asset-Automation-Plugin`
             const t = texts[0];
             if (t) {
               const bottom0 = t.y + t.height;
-              const targetW = stretches ? yield stretchTargetFor(t) : 0;
+              const targetW = stretches ? yield resolveStretch(t) : 0;
               yield setVtText(t, mainText);
               if (stretches && targetW > 0) {
                 t.textAlignHorizontal = "CENTER";
