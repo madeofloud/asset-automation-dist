@@ -273,6 +273,12 @@
               return yield handleGridMakerPreview(msg.width, msg.height, msg.division);
             case "GRID_CREATE":
               return yield handleGridMakerCreate(msg.width, msg.height, msg.division);
+            case "VR_BEGIN":
+              return yield handleVrBegin(msg.pageName, msg.dividers, msg.slots, msg.greyBytes);
+            case "VR_IMAGE":
+              return handleVrImage(msg.slotIds, msg.bytes);
+            case "VR_FINISH":
+              return handleVrFinish();
             case "RESIZE":
               return figma.ui.resize(msg.width, msg.height);
             case "OPEN_URL":
@@ -3152,6 +3158,96 @@ FRAME ROWS (${rows.length}):`);
             send({ type: "VIDEO_SCAN_RESULT", items: [], error: err instanceof Error ? err.message : String(err) });
           }
         });
+      }
+      var VR_DIVIDER_STYLE_KEY = "618e5910dc63a3cc259ce2ff9d21546539d1c568";
+      var VR_DIVIDER_GREY = { r: 135 / 255, g: 135 / 255, b: 135 / 255 };
+      var vr = {
+        page: null,
+        slots: /* @__PURE__ */ new Map(),
+        greyHash: ""
+      };
+      function vrBackgroundPaints(background) {
+        if (background === "grey") return [{ type: "IMAGE", scaleMode: "FILL", imageHash: vr.greyHash }];
+        if (background === "white") return [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+        return [];
+      }
+      function handleVrBegin(pageName, dividers, slots, greyBytes) {
+        return __async(this, null, function* () {
+          try {
+            const taken = new Set(figma.root.children.map((p) => p.name));
+            let name = pageName;
+            for (let i = 2; taken.has(name); i++) name = `${pageName} ${i}`;
+            const page = figma.createPage();
+            page.name = name;
+            yield figma.setCurrentPageAsync(page);
+            vr.page = page;
+            vr.slots.clear();
+            vr.greyHash = figma.createImage(greyBytes).hash;
+            let strokeStyleId = "";
+            try {
+              strokeStyleId = (yield figma.importStyleByKeyAsync(VR_DIVIDER_STYLE_KEY)).id;
+            } catch (e) {
+            }
+            for (const d of dividers) {
+              const f = figma.createFrame();
+              f.name = d.name;
+              f.resize(d.width, 50);
+              f.x = d.x;
+              f.y = d.y;
+              f.fills = [];
+              f.strokes = [{ type: "SOLID", color: VR_DIVIDER_GREY }];
+              if (strokeStyleId) yield f.setStrokeStyleIdAsync(strokeStyleId);
+              f.strokeAlign = "INSIDE";
+              f.strokeTopWeight = 0;
+              f.strokeRightWeight = 0;
+              f.strokeLeftWeight = 0;
+              f.strokeBottomWeight = 10;
+              page.appendChild(f);
+            }
+            for (const s of slots) {
+              const r = figma.createRectangle();
+              r.name = s.name;
+              r.resize(s.width, s.height);
+              r.x = s.x;
+              r.y = s.y;
+              r.fills = vrBackgroundPaints(s.background);
+              page.appendChild(r);
+              vr.slots.set(s.id, { node: r, background: s.background });
+            }
+            send({ type: "VR_READY" });
+          } catch (err) {
+            send({ type: "VR_ERROR", message: err instanceof Error ? err.message : String(err) });
+          }
+        });
+      }
+      function handleVrImage(slotIds, bytes) {
+        let hash;
+        try {
+          hash = figma.createImage(bytes).hash;
+        } catch (err) {
+          send({ type: "VR_IMAGE_FAILED", message: err instanceof Error ? err.message : String(err) });
+          return;
+        }
+        try {
+          for (const id of slotIds) {
+            const slot = vr.slots.get(id);
+            if (!slot) continue;
+            slot.node.fills = [...vrBackgroundPaints(slot.background), { type: "IMAGE", scaleMode: "FIT", imageHash: hash }];
+          }
+          send({ type: "VR_IMAGE_DONE" });
+        } catch (err) {
+          send({ type: "VR_ERROR", message: err instanceof Error ? err.message : String(err) });
+        }
+      }
+      function handleVrFinish() {
+        var _a;
+        const page = vr.page;
+        if (page && figma.currentPage === page && page.children.length > 0) {
+          figma.viewport.scrollAndZoomIntoView(page.children);
+        }
+        send({ type: "VR_DONE", pageName: (_a = page == null ? void 0 : page.name) != null ? _a : "" });
+        vr.page = null;
+        vr.slots.clear();
       }
     }
   });
