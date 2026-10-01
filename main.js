@@ -279,6 +279,8 @@
               return handleVrImage(msg.slotIds, msg.bytes);
             case "VR_FINISH":
               return handleVrFinish();
+            case "VR_CHECK_FILE":
+              return send({ type: "VR_FILE_STATUS", ok: vrIsVisualResourcesFile(), fileName: figma.root.name });
             case "RESIZE":
               return figma.ui.resize(msg.width, msg.height);
             case "OPEN_URL":
@@ -3161,6 +3163,9 @@ FRAME ROWS (${rows.length}):`);
       }
       var VR_DIVIDER_STYLE_KEY = "618e5910dc63a3cc259ce2ff9d21546539d1c568";
       var VR_DIVIDER_GREY = { r: 135 / 255, g: 135 / 255, b: 135 / 255 };
+      function vrIsVisualResourcesFile() {
+        return /visual[\s_-]*resources/i.test(figma.root.name);
+      }
       var vr = {
         page: null,
         slots: /* @__PURE__ */ new Map(),
@@ -3198,6 +3203,10 @@ FRAME ROWS (${rows.length}):`);
       function handleVrBegin(pageName, dividers, slots, greyBytes) {
         return __async(this, null, function* () {
           try {
+            if (!vrIsVisualResourcesFile()) {
+              send({ type: "VR_ERROR", message: "Visual Resources only works in the Visual Resources Figma file." });
+              return;
+            }
             const fileGreyHash = yield vrFindGreyHash();
             const taken = new Set(figma.root.children.map((p) => p.name));
             let name = pageName;
