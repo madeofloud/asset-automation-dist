@@ -3166,6 +3166,30 @@ FRAME ROWS (${rows.length}):`);
         slots: /* @__PURE__ */ new Map(),
         greyHash: ""
       };
+      var VR_GREY_LAYER = "image-fill";
+      function vrFindGreyHash() {
+        return __async(this, null, function* () {
+          const hashOf = (n) => {
+            var _a;
+            if (!("fills" in n) || !Array.isArray(n.fills)) return null;
+            const img = n.fills.find((f) => f.type === "IMAGE" && f.visible !== false);
+            return (_a = img == null ? void 0 : img.imageHash) != null ? _a : null;
+          };
+          const find = (page) => {
+            const node = page.findOne((n) => n.name.trim().toLowerCase() === VR_GREY_LAYER && hashOf(n) !== null);
+            return node ? hashOf(node) : null;
+          };
+          const here = find(figma.currentPage);
+          if (here) return here;
+          for (const page of figma.root.children) {
+            if (page === figma.currentPage) continue;
+            yield page.loadAsync();
+            const hash = find(page);
+            if (hash) return hash;
+          }
+          return null;
+        });
+      }
       function vrBackgroundPaints(background) {
         if (background === "grey") return [{ type: "IMAGE", scaleMode: "FILL", imageHash: vr.greyHash }];
         if (background === "white") return [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
@@ -3174,6 +3198,7 @@ FRAME ROWS (${rows.length}):`);
       function handleVrBegin(pageName, dividers, slots, greyBytes) {
         return __async(this, null, function* () {
           try {
+            const fileGreyHash = yield vrFindGreyHash();
             const taken = new Set(figma.root.children.map((p) => p.name));
             let name = pageName;
             for (let i = 2; taken.has(name); i++) name = `${pageName} ${i}`;
@@ -3182,7 +3207,7 @@ FRAME ROWS (${rows.length}):`);
             yield figma.setCurrentPageAsync(page);
             vr.page = page;
             vr.slots.clear();
-            vr.greyHash = figma.createImage(greyBytes).hash;
+            vr.greyHash = fileGreyHash != null ? fileGreyHash : figma.createImage(greyBytes).hash;
             let strokeStyleId = "";
             try {
               strokeStyleId = (yield figma.importStyleByKeyAsync(VR_DIVIDER_STYLE_KEY)).id;
@@ -3214,7 +3239,7 @@ FRAME ROWS (${rows.length}):`);
               page.appendChild(r);
               vr.slots.set(s.id, { node: r, background: s.background });
             }
-            send({ type: "VR_READY" });
+            send({ type: "VR_READY", greyFromFile: fileGreyHash !== null });
           } catch (err) {
             send({ type: "VR_ERROR", message: err instanceof Error ? err.message : String(err) });
           }
