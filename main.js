@@ -3200,6 +3200,38 @@ FRAME ROWS (${rows.length}):`);
         if (background === "white") return [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
         return [];
       }
+      var VR_NOTE_NAMES = ["IMPORTANT NOTE", "LINKS"];
+      var VR_NOTES_GAP = 300;
+      function vrCopyNotes(target) {
+        return __async(this, null, function* () {
+          const sources = [];
+          for (const name of VR_NOTE_NAMES) {
+            for (const page of figma.root.children) {
+              if (page === target) continue;
+              yield page.loadAsync();
+              const hit = page.children.find((n) => n.type === "SECTION" && n.name.trim().toUpperCase() === name);
+              if (hit) {
+                sources.push(hit);
+                break;
+              }
+            }
+          }
+          if (sources.length === 0) return 0;
+          const minX = Math.min(...sources.map((n) => n.x));
+          const minY = Math.min(...sources.map((n) => n.y));
+          const height = Math.max(...sources.map((n) => n.y + n.height)) - minY;
+          const placed = [];
+          for (const src of sources) {
+            placed.push({ copy: src.clone(), x: src.x - minX, y: src.y - minY - height - VR_NOTES_GAP });
+          }
+          for (const { copy, x, y } of placed) {
+            target.appendChild(copy);
+            copy.x = x;
+            copy.y = y;
+          }
+          return placed.length;
+        });
+      }
       function handleVrBegin(pageName, dividers, slots, greyBytes) {
         return __async(this, null, function* () {
           try {
@@ -3248,7 +3280,8 @@ FRAME ROWS (${rows.length}):`);
               page.appendChild(r);
               vr.slots.set(s.id, { node: r, background: s.background });
             }
-            send({ type: "VR_READY", greyFromFile: fileGreyHash !== null });
+            const notes = yield vrCopyNotes(page);
+            send({ type: "VR_READY", greyFromFile: fileGreyHash !== null, notes });
           } catch (err) {
             send({ type: "VR_ERROR", message: err instanceof Error ? err.message : String(err) });
           }
