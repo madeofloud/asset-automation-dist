@@ -279,6 +279,10 @@
               return handleVrImage(msg.slotIds, msg.bytes);
             case "VR_FINISH":
               return handleVrFinish();
+            case "VR_FIND_BOARD":
+              return yield handleVrFindBoard(msg.pageName);
+            case "VR_UPDATE":
+              return yield handleVrUpdate(msg.pageName, msg.anchorKey, msg.moves, msg.dividers, msg.slots, msg.greyBytes);
             case "VR_CHECK_FILE":
               return yield handleVrCheckFile();
             case "RESIZE":
@@ -3163,17 +3167,12 @@ FRAME ROWS (${rows.length}):`);
       }
       var VR_DIVIDER_STYLE_KEY = "618e5910dc63a3cc259ce2ff9d21546539d1c568";
       var VR_DIVIDER_GREY = { r: 135 / 255, g: 135 / 255, b: 135 / 255 };
-      var vr = {
-        page: null,
-        slots: /* @__PURE__ */ new Map(),
-        greyHash: ""
-      };
       var VR_GREY_LAYER = "image-fill";
-      function vrReadTemplate(needGrey) {
+      function vrReadTemplate() {
         return __async(this, null, function* () {
           const found = { note: null, links: null, greyHash: null };
           for (const page of figma.root.children) {
-            if (found.note && found.links && (!needGrey || found.greyHash)) break;
+            if (found.note && found.links && found.greyHash) break;
             yield page.loadAsync();
             for (const n of page.children) {
               const name = n.name.trim();
@@ -3181,7 +3180,7 @@ FRAME ROWS (${rows.length}):`);
                 const upper = name.toUpperCase();
                 if (!found.note && upper === "IMPORTANT NOTE") found.note = n;
                 else if (!found.links && upper === "LINKS") found.links = n;
-              } else if (needGrey && !found.greyHash && name.toLowerCase() === VR_GREY_LAYER && "fills" in n && Array.isArray(n.fills)) {
+              } else if (!found.greyHash && name.toLowerCase() === VR_GREY_LAYER && "fills" in n && Array.isArray(n.fills)) {
                 const img = n.fills.find((f) => f.type === "IMAGE" && f.visible !== false);
                 if (img == null ? void 0 : img.imageHash) found.greyHash = img.imageHash;
               }
@@ -3190,35 +3189,119 @@ FRAME ROWS (${rows.length}):`);
           return found;
         });
       }
+      var vrIsTemplateFile = (t) => !!t.links && !!(t.note || t.greyHash);
       function handleVrCheckFile() {
         return __async(this, null, function* () {
-          const t = yield vrReadTemplate(false);
-          send({ type: "VR_FILE_STATUS", ok: !!(t.note && t.links) });
+          send({ type: "VR_FILE_STATUS", ok: vrIsTemplateFile(yield vrReadTemplate()) });
         });
       }
+      var vr = {
+        page: null,
+        slots: /* @__PURE__ */ new Map(),
+        created: [],
+        greyHash: ""
+      };
+      var vrIsSlotKey = (key) => /^[oatgl]:/.test(key);
       function vrBackgroundPaints(background) {
         if (background === "grey") return [{ type: "IMAGE", scaleMode: "FILL", imageHash: vr.greyHash }];
         if (background === "white") return [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
         return [];
       }
-      var VR_NOTES_GAP = 300;
-      function vrCopyNotes(target, sources) {
-        const minX = Math.min(...sources.map((n) => n.x));
-        const minY = Math.min(...sources.map((n) => n.y));
-        const height = Math.max(...sources.map((n) => n.y + n.height)) - minY;
-        const placed = sources.map((src) => ({ copy: src.clone(), x: src.x - minX, y: src.y - minY - height - VR_NOTES_GAP }));
-        for (const { copy, x, y } of placed) {
-          target.appendChild(copy);
-          copy.x = x;
-          copy.y = y;
-        }
+      var VR_LINKS_GAP = 1e3;
+      function vrCopyLinks(target, links) {
+        const copy = links.clone();
+        target.appendChild(copy);
+        copy.x = 0;
+        copy.y = -VR_LINKS_GAP - copy.height;
+        return copy;
+      }
+      function vrTag(node, key, x, y, w, h) {
+        node.setPluginData("vr", key);
+        node.setPluginData("vp", `${x},${y},${w},${h}`);
+      }
+      function vrReadTag(node) {
+        const key = node.getPluginData("vr");
+        if (!key) return null;
+        const p = node.getPluginData("vp").split(",").map(Number);
+        if (p.length !== 4 || p.some((v) => !Number.isFinite(v))) return null;
+        return { key, x: p[0], y: p[1], width: p[2], height: p[3] };
+      }
+      function vrStrokeStyleId() {
+        return __async(this, null, function* () {
+          try {
+            return (yield figma.importStyleByKeyAsync(VR_DIVIDER_STYLE_KEY)).id;
+          } catch (e) {
+            return "";
+          }
+        });
+      }
+      function vrMakeDivider(page, d, offX, offY, strokeStyleId) {
+        return __async(this, null, function* () {
+          const f = figma.createFrame();
+          f.name = d.name;
+          f.resize(d.width, 50);
+          f.x = d.x + offX;
+          f.y = d.y + offY;
+          f.fills = [];
+          f.strokes = [{ type: "SOLID", color: VR_DIVIDER_GREY }];
+          if (strokeStyleId) yield f.setStrokeStyleIdAsync(strokeStyleId);
+          f.strokeAlign = "INSIDE";
+          f.strokeTopWeight = 0;
+          f.strokeRightWeight = 0;
+          f.strokeLeftWeight = 0;
+          f.strokeBottomWeight = 10;
+          page.appendChild(f);
+          vrTag(f, d.key, d.x, d.y, d.width, 50);
+          return f;
+        });
+      }
+      function vrMakeSlot(page, s, offX, offY) {
+        const r = figma.createRectangle();
+        r.name = s.name;
+        r.resize(s.width, s.height);
+        r.x = s.x + offX;
+        r.y = s.y + offY;
+        r.fills = vrBackgroundPaints(s.background);
+        page.appendChild(r);
+        vrTag(r, s.key, s.x, s.y, s.width, s.height);
+        vr.slots.set(s.id, { node: r, background: s.background });
+        return r;
+      }
+      function vrFindBoardPage(pageName) {
+        return __async(this, null, function* () {
+          for (const page of figma.root.children) {
+            if (page.name !== pageName) continue;
+            yield page.loadAsync();
+            if (page.children.some((n) => n.getPluginData("vr"))) return page;
+          }
+          return null;
+        });
+      }
+      function handleVrFindBoard(pageName) {
+        return __async(this, null, function* () {
+          try {
+            const page = yield vrFindBoardPage(pageName);
+            if (!page) {
+              send({ type: "VR_BOARD_STATUS", exists: false, legacy: figma.root.children.some((p) => p.name === pageName), items: [] });
+              return;
+            }
+            const items = [];
+            for (const n of page.children) {
+              const t = vrReadTag(n);
+              if (t) items.push(t);
+            }
+            send({ type: "VR_BOARD_STATUS", exists: true, legacy: false, items });
+          } catch (err) {
+            send({ type: "VR_ERROR", message: err instanceof Error ? err.message : String(err) });
+          }
+        });
       }
       function handleVrBegin(pageName, dividers, slots, greyBytes) {
         return __async(this, null, function* () {
           var _a;
           try {
-            const template = yield vrReadTemplate(true);
-            if (!template.note || !template.links) {
+            const template = yield vrReadTemplate();
+            if (!vrIsTemplateFile(template) || !template.links) {
               send({ type: "VR_ERROR", message: "Visual Resources only works in the Visual Resources Figma file." });
               return;
             }
@@ -3230,39 +3313,61 @@ FRAME ROWS (${rows.length}):`);
             yield figma.setCurrentPageAsync(page);
             vr.page = page;
             vr.slots.clear();
+            vr.created = [];
             vr.greyHash = (_a = template.greyHash) != null ? _a : figma.createImage(greyBytes).hash;
-            let strokeStyleId = "";
-            try {
-              strokeStyleId = (yield figma.importStyleByKeyAsync(VR_DIVIDER_STYLE_KEY)).id;
-            } catch (e) {
+            const strokeStyleId = yield vrStrokeStyleId();
+            for (const d of dividers) vr.created.push(yield vrMakeDivider(page, d, 0, 0, strokeStyleId));
+            for (const s of slots) vr.created.push(vrMakeSlot(page, s, 0, 0));
+            vr.created.push(vrCopyLinks(page, template.links));
+            send({ type: "VR_READY", greyFromFile: template.greyHash !== null });
+          } catch (err) {
+            send({ type: "VR_ERROR", message: err instanceof Error ? err.message : String(err) });
+          }
+        });
+      }
+      function handleVrUpdate(pageName, anchorKey, moves, dividers, slots, greyBytes) {
+        return __async(this, null, function* () {
+          var _a;
+          try {
+            const template = yield vrReadTemplate();
+            if (!vrIsTemplateFile(template)) {
+              send({ type: "VR_ERROR", message: "Visual Resources only works in the Visual Resources Figma file." });
+              return;
             }
-            for (const d of dividers) {
-              const f = figma.createFrame();
-              f.name = d.name;
-              f.resize(d.width, 50);
-              f.x = d.x;
-              f.y = d.y;
-              f.fills = [];
-              f.strokes = [{ type: "SOLID", color: VR_DIVIDER_GREY }];
-              if (strokeStyleId) yield f.setStrokeStyleIdAsync(strokeStyleId);
-              f.strokeAlign = "INSIDE";
-              f.strokeTopWeight = 0;
-              f.strokeRightWeight = 0;
-              f.strokeLeftWeight = 0;
-              f.strokeBottomWeight = 10;
-              page.appendChild(f);
+            const page = yield vrFindBoardPage(pageName);
+            if (!page) {
+              send({ type: "VR_ERROR", message: `The board \u201C${pageName}\u201D is gone. Pick the folder again to make a new one.` });
+              return;
             }
-            for (const s of slots) {
-              const r = figma.createRectangle();
-              r.name = s.name;
-              r.resize(s.width, s.height);
-              r.x = s.x;
-              r.y = s.y;
-              r.fills = vrBackgroundPaints(s.background);
-              page.appendChild(r);
-              vr.slots.set(s.id, { node: r, background: s.background });
+            yield figma.setCurrentPageAsync(page);
+            vr.page = page;
+            vr.slots.clear();
+            vr.created = [];
+            vr.greyHash = (_a = template.greyHash) != null ? _a : figma.createImage(greyBytes).hash;
+            const byKey = /* @__PURE__ */ new Map();
+            for (const n of page.children) {
+              const k = n.getPluginData("vr");
+              if (k) byKey.set(k, n);
             }
-            vrCopyNotes(page, [template.note, template.links]);
+            let offX = 0, offY = 0;
+            const anchor = anchorKey ? byKey.get(anchorKey) : void 0;
+            const anchorTag = anchor ? vrReadTag(anchor) : null;
+            if (anchor && anchorTag) {
+              offX = anchor.x - anchorTag.x;
+              offY = anchor.y - anchorTag.y;
+            }
+            for (const m of moves) {
+              const n = byKey.get(m.key);
+              if (!n) continue;
+              n.x += m.dx;
+              n.y += m.dy;
+              if (m.dw && n.type === "FRAME") n.resize(Math.max(1, n.width + m.dw), n.height);
+              if (!vrIsSlotKey(m.key) && n.name !== m.name) n.name = m.name;
+              n.setPluginData("vp", m.plan);
+            }
+            const strokeStyleId = yield vrStrokeStyleId();
+            for (const d of dividers) vr.created.push(yield vrMakeDivider(page, d, offX, offY, strokeStyleId));
+            for (const s of slots) vr.created.push(vrMakeSlot(page, s, offX, offY));
             send({ type: "VR_READY", greyFromFile: template.greyHash !== null });
           } catch (err) {
             send({ type: "VR_ERROR", message: err instanceof Error ? err.message : String(err) });
@@ -3291,12 +3396,14 @@ FRAME ROWS (${rows.length}):`);
       function handleVrFinish() {
         var _a;
         const page = vr.page;
-        if (page && figma.currentPage === page && page.children.length > 0) {
-          figma.viewport.scrollAndZoomIntoView(page.children);
+        if (page && figma.currentPage === page) {
+          const target = vr.created.length > 0 ? vr.created : page.children;
+          if (target.length > 0) figma.viewport.scrollAndZoomIntoView(target);
         }
         send({ type: "VR_DONE", pageName: (_a = page == null ? void 0 : page.name) != null ? _a : "" });
         vr.page = null;
         vr.slots.clear();
+        vr.created = [];
       }
     }
   });
