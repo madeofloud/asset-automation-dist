@@ -280,7 +280,7 @@
             case "VR_FINISH":
               return handleVrFinish();
             case "VR_CHECK_FILE":
-              return send({ type: "VR_FILE_STATUS", ok: vrIsVisualResourcesFile(), fileName: figma.root.name });
+              return yield handleVrCheckFile();
             case "RESIZE":
               return figma.ui.resize(msg.width, msg.height);
             case "OPEN_URL":
@@ -3163,36 +3163,37 @@ FRAME ROWS (${rows.length}):`);
       }
       var VR_DIVIDER_STYLE_KEY = "618e5910dc63a3cc259ce2ff9d21546539d1c568";
       var VR_DIVIDER_GREY = { r: 135 / 255, g: 135 / 255, b: 135 / 255 };
-      function vrIsVisualResourcesFile() {
-        return /visual[\s_-]*resources/i.test(figma.root.name);
-      }
       var vr = {
         page: null,
         slots: /* @__PURE__ */ new Map(),
         greyHash: ""
       };
       var VR_GREY_LAYER = "image-fill";
-      function vrFindGreyHash() {
+      function vrReadTemplate(needGrey) {
         return __async(this, null, function* () {
-          const hashOf = (n) => {
-            var _a;
-            if (!("fills" in n) || !Array.isArray(n.fills)) return null;
-            const img = n.fills.find((f) => f.type === "IMAGE" && f.visible !== false);
-            return (_a = img == null ? void 0 : img.imageHash) != null ? _a : null;
-          };
-          const find = (page) => {
-            const node = page.findOne((n) => n.name.trim().toLowerCase() === VR_GREY_LAYER && hashOf(n) !== null);
-            return node ? hashOf(node) : null;
-          };
-          const here = find(figma.currentPage);
-          if (here) return here;
+          const found = { note: null, links: null, greyHash: null };
           for (const page of figma.root.children) {
-            if (page === figma.currentPage) continue;
+            if (found.note && found.links && (!needGrey || found.greyHash)) break;
             yield page.loadAsync();
-            const hash = find(page);
-            if (hash) return hash;
+            for (const n of page.children) {
+              const name = n.name.trim();
+              if (n.type === "SECTION") {
+                const upper = name.toUpperCase();
+                if (!found.note && upper === "IMPORTANT NOTE") found.note = n;
+                else if (!found.links && upper === "LINKS") found.links = n;
+              } else if (needGrey && !found.greyHash && name.toLowerCase() === VR_GREY_LAYER && "fills" in n && Array.isArray(n.fills)) {
+                const img = n.fills.find((f) => f.type === "IMAGE" && f.visible !== false);
+                if (img == null ? void 0 : img.imageHash) found.greyHash = img.imageHash;
+              }
+            }
           }
-          return null;
+          return found;
+        });
+      }
+      function handleVrCheckFile() {
+        return __async(this, null, function* () {
+          const t = yield vrReadTemplate(false);
+          send({ type: "VR_FILE_STATUS", ok: !!(t.note && t.links) });
         });
       }
       function vrBackgroundPaints(background) {
@@ -3200,46 +3201,27 @@ FRAME ROWS (${rows.length}):`);
         if (background === "white") return [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
         return [];
       }
-      var VR_NOTE_NAMES = ["IMPORTANT NOTE", "LINKS"];
       var VR_NOTES_GAP = 300;
-      function vrCopyNotes(target) {
-        return __async(this, null, function* () {
-          const sources = [];
-          for (const name of VR_NOTE_NAMES) {
-            for (const page of figma.root.children) {
-              if (page === target) continue;
-              yield page.loadAsync();
-              const hit = page.children.find((n) => n.type === "SECTION" && n.name.trim().toUpperCase() === name);
-              if (hit) {
-                sources.push(hit);
-                break;
-              }
-            }
-          }
-          if (sources.length === 0) return 0;
-          const minX = Math.min(...sources.map((n) => n.x));
-          const minY = Math.min(...sources.map((n) => n.y));
-          const height = Math.max(...sources.map((n) => n.y + n.height)) - minY;
-          const placed = [];
-          for (const src of sources) {
-            placed.push({ copy: src.clone(), x: src.x - minX, y: src.y - minY - height - VR_NOTES_GAP });
-          }
-          for (const { copy, x, y } of placed) {
-            target.appendChild(copy);
-            copy.x = x;
-            copy.y = y;
-          }
-          return placed.length;
-        });
+      function vrCopyNotes(target, sources) {
+        const minX = Math.min(...sources.map((n) => n.x));
+        const minY = Math.min(...sources.map((n) => n.y));
+        const height = Math.max(...sources.map((n) => n.y + n.height)) - minY;
+        const placed = sources.map((src) => ({ copy: src.clone(), x: src.x - minX, y: src.y - minY - height - VR_NOTES_GAP }));
+        for (const { copy, x, y } of placed) {
+          target.appendChild(copy);
+          copy.x = x;
+          copy.y = y;
+        }
       }
       function handleVrBegin(pageName, dividers, slots, greyBytes) {
         return __async(this, null, function* () {
+          var _a;
           try {
-            if (!vrIsVisualResourcesFile()) {
+            const template = yield vrReadTemplate(true);
+            if (!template.note || !template.links) {
               send({ type: "VR_ERROR", message: "Visual Resources only works in the Visual Resources Figma file." });
               return;
             }
-            const fileGreyHash = yield vrFindGreyHash();
             const taken = new Set(figma.root.children.map((p) => p.name));
             let name = pageName;
             for (let i = 2; taken.has(name); i++) name = `${pageName} ${i}`;
@@ -3248,7 +3230,7 @@ FRAME ROWS (${rows.length}):`);
             yield figma.setCurrentPageAsync(page);
             vr.page = page;
             vr.slots.clear();
-            vr.greyHash = fileGreyHash != null ? fileGreyHash : figma.createImage(greyBytes).hash;
+            vr.greyHash = (_a = template.greyHash) != null ? _a : figma.createImage(greyBytes).hash;
             let strokeStyleId = "";
             try {
               strokeStyleId = (yield figma.importStyleByKeyAsync(VR_DIVIDER_STYLE_KEY)).id;
@@ -3280,8 +3262,8 @@ FRAME ROWS (${rows.length}):`);
               page.appendChild(r);
               vr.slots.set(s.id, { node: r, background: s.background });
             }
-            const notes = yield vrCopyNotes(page);
-            send({ type: "VR_READY", greyFromFile: fileGreyHash !== null, notes });
+            vrCopyNotes(page, [template.note, template.links]);
+            send({ type: "VR_READY", greyFromFile: template.greyHash !== null });
           } catch (err) {
             send({ type: "VR_ERROR", message: err instanceof Error ? err.message : String(err) });
           }
