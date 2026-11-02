@@ -2465,10 +2465,10 @@ FRAME ROWS (${rows.length}):`);
               const frameNode = figma.getNodeById(f.id);
               const gifBytes = yield findEmbeddedGifBytes(frameNode);
               if (gifBytes) {
-                exportedFrames.push({ name: f.name, width: f.width, height: f.height, kind: "gif", gifBytes: Array.from(gifBytes) });
+                exportedFrames.push({ name: f.name, width: f.width, height: f.height, kind: "gif", gifBytes });
               } else {
                 const bytes = yield frameNode.exportAsync({ format: "PNG", constraint: { type: "SCALE", value: 1 } });
-                exportedFrames.push({ name: f.name, width: f.width, height: f.height, kind: "static", bytes: Array.from(bytes) });
+                exportedFrames.push({ name: f.name, width: f.width, height: f.height, kind: "static", bytes });
               }
             }
             send({ type: "GIF_ROW_DATA", rowIndex: i, label, frames: exportedFrames });
