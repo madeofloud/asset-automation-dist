@@ -276,7 +276,7 @@
             case "VR_BEGIN":
               return yield handleVrBegin(msg.pageName, msg.dividers, msg.slots, msg.greyBytes);
             case "VR_IMAGE":
-              return handleVrImage(msg.slotIds, msg.bytes);
+              return handleVrImage(msg.slotIds, msg.bytes, msg.reqId);
             case "VR_FINISH":
               return handleVrFinish();
             case "VR_FIND_BOARD":
@@ -3374,12 +3374,12 @@ FRAME ROWS (${rows.length}):`);
           }
         });
       }
-      function handleVrImage(slotIds, bytes) {
+      function handleVrImage(slotIds, bytes, reqId) {
         let hash;
         try {
           hash = figma.createImage(bytes).hash;
         } catch (err) {
-          send({ type: "VR_IMAGE_FAILED", message: err instanceof Error ? err.message : String(err) });
+          send({ type: "VR_IMAGE_FAILED", reqId, message: err instanceof Error ? err.message : String(err) });
           return;
         }
         try {
@@ -3388,7 +3388,7 @@ FRAME ROWS (${rows.length}):`);
             if (!slot) continue;
             slot.node.fills = [...vrBackgroundPaints(slot.background), { type: "IMAGE", scaleMode: "FIT", imageHash: hash }];
           }
-          send({ type: "VR_IMAGE_DONE" });
+          send({ type: "VR_IMAGE_DONE", reqId });
         } catch (err) {
           send({ type: "VR_ERROR", message: err instanceof Error ? err.message : String(err) });
         }
